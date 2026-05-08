@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Bed, Bath, Maximize, Heart, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useFavorites } from '@/lib/favorites-context';
 
 interface PropertyCardProps {
   property: {
@@ -30,6 +31,7 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [touchStart, setTouchStart] = useState(0);
   const [touchEnd, setTouchEnd] = useState(0);
+  const { isFavorite, toggleFavorite } = useFavorites();
 
   const statusConfig = {
     active: { bg: 'bg-slate-600', text: 'Active' },
@@ -116,10 +118,10 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
         </div>
 
         <button
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
           className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
         >
-          <Heart className="w-4 h-4 text-gray-700" />
+          <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
         </button>
 
         <button

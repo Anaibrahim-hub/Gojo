@@ -1,8 +1,11 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, User, TrendingUp, Home, Key, MessageCircle, FileText, BarChart3, ChevronRight, X, Menu, Heart, Settings, Tag, UserPlus, LogOut, MapPin, Loader2 } from 'lucide-react';
+import { Search, User, TrendingUp, Home, Key, MessageCircle, ChevronRight, X, Menu, Heart, Settings, Tag, UserPlus, LogOut, MapPin, Loader2, Mail } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { useFavorites } from '@/lib/favorites-context';
+import { mockProperties } from '@/app/data/properties';
 import SignInModal from './SignInModal';
 
 interface Property {
@@ -65,10 +68,14 @@ function saveRecent(item: RecentSearch) {
 }
 
 export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageProps) {
+  const router = useRouter();
   const { user, signOut } = useAuth();
+  const { isFavorite, toggleFavorite } = useFavorites();
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   const [recommendedIndex, setRecommendedIndex] = useState(0);
   const [forSaleIndex, setForSaleIndex] = useState(0);
   const [forRentIndex, setForRentIndex] = useState(0);
@@ -81,6 +88,16 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
   const recommendedRef = useRef<HTMLDivElement>(null);
   const forSaleRef = useRef<HTMLDivElement>(null);
   const forRentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
+      }
+    }
+    if (showUserMenu) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showUserMenu]);
 
 
   const formatPrice = (price: number) => {
@@ -307,13 +324,57 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
           <div className="flex items-center gap-2 lg:gap-3">
             {user ? (
               <>
-                <div className="hidden lg:flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-gray-100 transition-all cursor-default">
-                  {user.photoURL
-                    ? <img src={user.photoURL} alt={user.displayName || ''} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
-                    : <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">{user.displayName?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}</div>
-                  }
-                  <span className="text-sm font-medium text-gray-700 max-w-[120px] truncate">{user.displayName ?? user.email}</span>
+                {/* Desktop user menu */}
+                <div className="relative hidden lg:block" ref={userMenuRef}>
+                  <button
+                    onClick={() => setShowUserMenu((v) => !v)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-gray-100 transition-all"
+                  >
+                    {user.photoURL
+                      ? <img src={user.photoURL} alt={user.displayName || ''} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+                      : <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">{user.displayName?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}</div>
+                    }
+                    <span className="text-sm font-medium text-gray-700 max-w-[120px] truncate">{user.displayName ?? user.email}</span>
+                  </button>
+                  {showUserMenu && (
+                    <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50">
+                      <div className="px-4 py-3 border-b border-gray-100">
+                        {user.displayName && <p className="text-sm font-semibold text-gray-900 truncate">{user.displayName}</p>}
+                        <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                      </div>
+                      <div className="py-1">
+                        <button onClick={() => { router.push('/favorites'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                          <Heart className="w-4 h-4 text-gray-400" />Favorites
+                        </button>
+                        <button onClick={() => { router.push('/settings'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                          <Settings className="w-4 h-4 text-gray-400" />Settings
+                        </button>
+                        <div className="border-t border-gray-100 my-1" />
+                        <button onClick={() => { router.push('/list-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                          <Key className="w-4 h-4 text-gray-400" />List My Home for Rent
+                        </button>
+                        <button onClick={() => { router.push('/sell-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                          <Tag className="w-4 h-4 text-gray-400" />Sell My Home
+                        </button>
+                        <button onClick={() => { router.push('/become-an-agent'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                          <UserPlus className="w-4 h-4 text-gray-400" />Become an Agent
+                        </button>
+                        <div className="border-t border-gray-100 my-1" />
+                        <button onClick={() => { router.push('/contact'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                          <Mail className="w-4 h-4 text-gray-400" />Contact Us
+                        </button>
+                        <div className="border-t border-gray-100 my-1" />
+                        <button
+                          onClick={() => { signOut(); setShowUserMenu(false); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-red-50 transition-all text-sm font-medium text-red-600"
+                        >
+                          <LogOut className="w-4 h-4" />Sign Out
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
+                {/* Mobile sign out */}
                 <button
                   onClick={() => signOut()}
                   className="lg:hidden px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-xl hover:bg-red-50 transition-all"
@@ -387,6 +448,12 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
+                  className="absolute top-2 lg:top-3 left-2 lg:left-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
+                >
+                  <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                </button>
                 {property.badge && (
                   <div className={`absolute top-2 lg:top-3 right-2 lg:right-3 ${property.badge === 'Hot' ? 'bg-red-500' : 'bg-green-500'} text-white px-2 lg:px-3 py-1 rounded-full text-xs font-bold shadow-lg`}>
                     {property.badge}
@@ -427,6 +494,64 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
         </div>
       </section>
 
+      {/* Saved Listings — signed-in users with at least one favorite */}
+      {user && mockProperties.filter((p) => isFavorite(p.id)).length > 0 && (() => {
+        const saved = mockProperties.filter((p) => isFavorite(p.id));
+        return (
+          <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
+            <div className="flex items-center justify-between mb-3 lg:mb-4">
+              <div className="flex items-center gap-2">
+                <Heart className="w-5 h-5 lg:w-6 lg:h-6 text-red-500 fill-red-500" />
+                <h2 className="text-xl lg:text-3xl font-bold text-gray-900">Saved Listings</h2>
+              </div>
+              <button onClick={() => router.push('/favorites')} className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base">
+                View All <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
+              </button>
+            </div>
+            <div className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide">
+              {saved.map((property) => (
+                <div
+                  key={property.id}
+                  className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl transition-all snap-start cursor-pointer group"
+                  onClick={() => onPropertyClick(property)}
+                >
+                  <div className="relative h-44 lg:h-48 overflow-hidden">
+                    <img
+                      src={property.image}
+                      alt={property.address}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
+                      className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
+                    >
+                      <Heart className="w-4 h-4 fill-red-500 text-red-500" />
+                    </button>
+                  </div>
+                  <div className="p-4 lg:p-5">
+                    <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
+                      {property.type === 'rent'
+                        ? `Br ${property.rent.toLocaleString()}/mo`
+                        : formatPrice(property.price)}
+                    </div>
+                    <div className="flex items-center gap-2 lg:gap-3 text-gray-600 mb-2 text-xs lg:text-sm">
+                      <span>{property.beds} bd</span>
+                      <span>•</span>
+                      <span>{property.baths} ba</span>
+                      <span>•</span>
+                      <span>{property.sqft.toLocaleString()} sqft</span>
+                    </div>
+                    <div className="text-gray-700 font-medium text-sm lg:text-base">{property.address}</div>
+                    <div className="text-gray-500 text-xs lg:text-sm">{property.city}, {property.state}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })()}
+
       {/* For Sale */}
       <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
         <div className="flex items-center justify-between mb-3 lg:mb-4">
@@ -462,6 +587,12 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
+                  className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
+                >
+                  <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                </button>
               </div>
               <div className="p-4 lg:p-5">
                 <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
@@ -532,6 +663,12 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
+                  className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
+                >
+                  <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                </button>
               </div>
               <div className="p-4 lg:p-5">
                 <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
@@ -857,36 +994,36 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                 </button>
               )}
 
-              <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+              <button onClick={() => { router.push('/favorites'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
                 <Heart className="w-5 h-5" />
                 Favorites
               </button>
 
-              <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+              <button onClick={() => { router.push('/settings'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
                 <Settings className="w-5 h-5" />
                 Settings
               </button>
 
               <div className="border-t border-gray-200 my-2"></div>
 
-              <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+              <button onClick={() => { router.push('/list-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
                 <Key className="w-5 h-5" />
                 List My Home for Rent
               </button>
 
-              <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+              <button onClick={() => { router.push('/sell-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
                 <Tag className="w-5 h-5" />
                 Sell My Home
               </button>
 
-              <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+              <button onClick={() => { router.push('/become-an-agent'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
                 <UserPlus className="w-5 h-5" />
                 Become an Agent
               </button>
 
               <div className="border-t border-gray-200 my-2"></div>
 
-              <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+              <button onClick={() => { router.push('/contact'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
                 <MessageCircle className="w-5 h-5" />
                 Contact Us
               </button>

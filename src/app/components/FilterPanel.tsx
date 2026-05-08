@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Search, SlidersHorizontal, X, Home, Key, User, Menu, Heart, Settings, Tag, UserPlus, Mail, TrendingUp, MapPin, Loader2, ChevronRight, ArrowLeft, LogOut } from 'lucide-react';
 
@@ -66,6 +67,7 @@ function saveRecent(item: RecentSearch) {
 }
 
 export default function FilterPanel({ filters, searchQuery, onSearchChange, onLocationSelect, onFilterChange, onClearFilters, listingMode, onListingModeChange, onLogoClick, onSignInClick }: FilterPanelProps) {
+  const router = useRouter();
   const [showFilters, setShowFilters] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -116,6 +118,16 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
   };
 
   const priceOptions = listingMode === 'buy' ? buyPriceOptions : rentPriceOptions;
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
+      }
+    }
+    if (showUserMenu) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showUserMenu]);
 
   // Debounced geocoding fetch
   useEffect(() => {
@@ -239,16 +251,40 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
                   <span className="text-sm font-medium text-gray-700 max-w-[120px] truncate">{user.displayName}</span>
                 </button>
                 {showUserMenu && (
-                  <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50">
+                  <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50">
                     <div className="px-4 py-3 border-b border-gray-100">
+                      {user.displayName && <p className="text-sm font-semibold text-gray-900 truncate">{user.displayName}</p>}
                       <p className="text-xs text-gray-500 truncate">{user.email}</p>
                     </div>
-                    <button
-                      onClick={() => { signOut(); setShowUserMenu(false); }}
-                      className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-all font-medium"
-                    >
-                      Sign out
-                    </button>
+                    <div className="py-1">
+                      <button onClick={() => { router.push('/favorites'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                        <Heart className="w-4 h-4 text-gray-400" />Favorites
+                      </button>
+                      <button onClick={() => { router.push('/settings'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                        <Settings className="w-4 h-4 text-gray-400" />Settings
+                      </button>
+                      <div className="border-t border-gray-100 my-1" />
+                      <button onClick={() => { router.push('/list-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                        <Key className="w-4 h-4 text-gray-400" />List My Home for Rent
+                      </button>
+                      <button onClick={() => { router.push('/sell-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                        <Tag className="w-4 h-4 text-gray-400" />Sell My Home
+                      </button>
+                      <button onClick={() => { router.push('/become-an-agent'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                        <UserPlus className="w-4 h-4 text-gray-400" />Become an Agent
+                      </button>
+                      <div className="border-t border-gray-100 my-1" />
+                      <button onClick={() => { router.push('/contact'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                        <Mail className="w-4 h-4 text-gray-400" />Contact Us
+                      </button>
+                      <div className="border-t border-gray-100 my-1" />
+                      <button
+                        onClick={() => { signOut(); setShowUserMenu(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-red-50 transition-all text-sm font-medium text-red-600"
+                      >
+                        <LogOut className="w-4 h-4" />Sign Out
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -474,14 +510,14 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
               ) : (
                 <button onClick={() => { onSignInClick(); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><User className="w-5 h-5" />Sign In</button>
               )}
-              <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Heart className="w-5 h-5" />Favorites</button>
-              <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Settings className="w-5 h-5" />Settings</button>
+              <button onClick={() => { router.push('/favorites'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Heart className="w-5 h-5" />Favorites</button>
+              <button onClick={() => { router.push('/settings'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Settings className="w-5 h-5" />Settings</button>
               <div className="border-t border-gray-200 my-2"></div>
-              <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Key className="w-5 h-5" />List My Home for Rent</button>
-              <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Tag className="w-5 h-5" />Sell My Home</button>
-              <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><UserPlus className="w-5 h-5" />Become an Agent</button>
+              <button onClick={() => { router.push('/list-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Key className="w-5 h-5" />List My Home for Rent</button>
+              <button onClick={() => { router.push('/sell-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Tag className="w-5 h-5" />Sell My Home</button>
+              <button onClick={() => { router.push('/become-an-agent'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><UserPlus className="w-5 h-5" />Become an Agent</button>
               <div className="border-t border-gray-200 my-2"></div>
-              <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Mail className="w-5 h-5" />Contact Us</button>
+              <button onClick={() => { router.push('/contact'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Mail className="w-5 h-5" />Contact Us</button>
               {user && (
                 <>
                   <div className="border-t border-gray-200 my-2"></div>
