@@ -15,6 +15,7 @@ export interface Property {
   lng: number
   type: 'sale' | 'rent' | 'both'
   propertyType: string
+  furnished?: boolean
 }
 
 export const mockProperties: Property[] = [
@@ -35,6 +36,7 @@ export const mockProperties: Property[] = [
     lng: 38.8090,
     type: 'both',
     propertyType: 'House',
+    furnished: true,
   },
   {
     id: 2,
@@ -53,6 +55,7 @@ export const mockProperties: Property[] = [
     lng: 38.8020,
     type: 'sale',
     propertyType: 'Condo',
+    furnished: false,
   },
   {
     id: 3,
@@ -71,6 +74,7 @@ export const mockProperties: Property[] = [
     lng: 38.8194,
     type: 'both',
     propertyType: 'House',
+    furnished: true,
   },
   {
     id: 4,
@@ -89,6 +93,7 @@ export const mockProperties: Property[] = [
     lng: 38.8220,
     type: 'sale',
     propertyType: 'House',
+    furnished: false,
   },
   {
     id: 5,
@@ -107,6 +112,7 @@ export const mockProperties: Property[] = [
     lng: 38.7530,
     type: 'both',
     propertyType: 'Condo',
+    furnished: true,
   },
   {
     id: 6,
@@ -125,6 +131,7 @@ export const mockProperties: Property[] = [
     lng: 38.7640,
     type: 'rent',
     propertyType: 'Condo',
+    furnished: true,
   },
   {
     id: 7,
@@ -143,6 +150,7 @@ export const mockProperties: Property[] = [
     lng: 38.7930,
     type: 'sale',
     propertyType: 'House',
+    furnished: false,
   },
   {
     id: 8,
@@ -161,6 +169,7 @@ export const mockProperties: Property[] = [
     lng: 38.8220,
     type: 'rent',
     propertyType: 'Townhouse',
+    furnished: false,
   },
   {
     id: 9,
@@ -179,5 +188,6 @@ export const mockProperties: Property[] = [
     lng: 39.2700,
     type: 'both',
     propertyType: 'Commercial',
+    furnished: true,
   },
 ]

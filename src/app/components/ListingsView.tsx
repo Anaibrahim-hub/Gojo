@@ -33,6 +33,7 @@ export default function ListingsView() {
     minSqft: '',
     status: '',
     propertyType: '',
+    furnished: '',
   })
 
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
@@ -47,7 +48,7 @@ export default function ListingsView() {
   }
 
   const handleClearFilters = () => {
-    setFilters({ minPrice: '', maxPrice: '', beds: '', baths: '', minSqft: '', status: '', propertyType: '' })
+    setFilters({ minPrice: '', maxPrice: '', beds: '', baths: '', minSqft: '', status: '', propertyType: '', furnished: '' })
   }
 
   const filteredProperties = useMemo(() => {
@@ -67,6 +68,8 @@ export default function ListingsView() {
       if (filters.baths && property.baths < parseInt(filters.baths)) return false
       if (filters.status && property.status !== filters.status) return false
       if (filters.propertyType && property.propertyType !== filters.propertyType) return false
+      if (filters.furnished === 'true' && !property.furnished) return false
+      if (filters.furnished === 'false' && property.furnished) return false
       return true
     })
 

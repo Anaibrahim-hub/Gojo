@@ -14,6 +14,7 @@ interface FilterPanelProps {
     minSqft: string;
     status: string;
     propertyType: string;
+    furnished: string;
   };
   searchQuery: string;
   onSearchChange: (query: string) => void;
@@ -325,161 +326,136 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
             </button>
           </div>
 
-          <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="flex items-center gap-2 px-5 py-2.5 bg-white border-2 border-gray-200 rounded-xl hover:border-blue-500 transition-all font-medium text-gray-700"
+          >
             <SlidersHorizontal className="w-5 h-5 text-blue-600" />
-            <select
-              value={filters.minPrice}
-              onChange={(e) => onFilterChange('minPrice', e.target.value)}
-              className="border-2 border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm font-medium transition-all cursor-pointer hover:border-gray-300"
-            >
-              {priceOptions.min.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-
-            <select
-              value={filters.maxPrice}
-              onChange={(e) => onFilterChange('maxPrice', e.target.value)}
-              className="border-2 border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm font-medium transition-all cursor-pointer hover:border-gray-300"
-            >
-              {priceOptions.max.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-
-            <select
-              value={filters.beds}
-              onChange={(e) => onFilterChange('beds', e.target.value)}
-              className="border-2 border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm font-medium transition-all cursor-pointer hover:border-gray-300"
-            >
-              <option value="">Beds</option>
-              <option value="1">1+</option>
-              <option value="2">2+</option>
-              <option value="3">3+</option>
-              <option value="4">4+</option>
-            </select>
-
-            <select
-              value={filters.baths}
-              onChange={(e) => onFilterChange('baths', e.target.value)}
-              className="border-2 border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm font-medium transition-all cursor-pointer hover:border-gray-300"
-            >
-              <option value="">Baths</option>
-              <option value="1">1+</option>
-              <option value="2">2+</option>
-              <option value="3">3+</option>
-            </select>
-
-            <select
-              value={filters.status}
-              onChange={(e) => onFilterChange('status', e.target.value)}
-              className="border-2 border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm font-medium transition-all cursor-pointer hover:border-gray-300"
-            >
-              <option value="">All Listings</option>
-              <option value="new">New</option>
-              <option value="active">Active</option>
-              <option value="pending">Pending</option>
-            </select>
-
-            <select
-              value={filters.propertyType}
-              onChange={(e) => onFilterChange('propertyType', e.target.value)}
-              className="border-2 border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm font-medium transition-all cursor-pointer hover:border-gray-300"
-            >
-              <option value="">Property Type</option>
-              <option value="House">House</option>
-              <option value="Condo">Condo</option>
-              <option value="Townhouse">Townhouse</option>
-              <option value="Multi-family">Multi-family (2-4 units)</option>
-              <option value="Commercial">Commercial</option>
-              <option value="Land">Land</option>
-            </select>
-
-            <button
-              onClick={onClearFilters}
-              className="flex items-center gap-2 text-gray-600 hover:text-red-600 px-4 py-2 text-sm font-medium hover:bg-red-50 rounded-lg transition-all"
-            >
-              <X className="w-4 h-4" />
-              Clear
-            </button>
-          </div>
+            <span>Filters</span>
+          </button>
         </div>
       </div>
 
       {showFilters && (
-        <div className="lg:hidden fixed inset-0 bg-white z-[1000] overflow-y-auto">
-          <div className="p-4 space-y-5 pb-24">
-            <div className="flex items-center justify-between">
-              <button onClick={() => setShowFilters(false)} className="p-2 -ml-2">
-                <X className="w-6 h-6 text-gray-900" />
-              </button>
-              <h2 className="text-lg font-bold text-gray-900">Filters</h2>
-              <button onClick={onClearFilters} className="text-blue-600 font-semibold">Reset</button>
-            </div>
-
-            <div>
-              <div className="flex bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-1.5 gap-1 shadow-inner">
-                <button
-                  onClick={() => onListingModeChange('buy')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-all text-sm font-medium ${listingMode === 'buy' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30' : 'text-gray-600 hover:text-gray-900'}`}
-                >
-                  <Home className="w-4 h-4" /><span>Buy</span>
+        <div
+          className="fixed inset-0 bg-black/50 z-[1000] flex items-start justify-center p-0 lg:p-6 lg:overflow-y-auto"
+          onClick={() => setShowFilters(false)}
+        >
+          <div
+            className="bg-white w-full h-full lg:h-auto lg:max-w-2xl lg:rounded-2xl overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 lg:p-6 space-y-5 pb-24 lg:pb-6">
+              <div className="flex items-center justify-between">
+                <button onClick={() => setShowFilters(false)} className="p-2 -ml-2">
+                  <X className="w-6 h-6 text-gray-900" />
                 </button>
-                <button
-                  onClick={() => onListingModeChange('rent')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-all text-sm font-medium ${listingMode === 'rent' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30' : 'text-gray-600 hover:text-gray-900'}`}
-                >
-                  <Key className="w-4 h-4" /><span>Rent</span>
+                <h2 className="text-lg font-bold text-gray-900">Filters</h2>
+                <button onClick={onClearFilters} className="text-blue-600 font-semibold">Reset</button>
+              </div>
+
+              <div>
+                <div className="flex bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-1.5 gap-1 shadow-inner">
+                  <button
+                    onClick={() => onListingModeChange('buy')}
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-all text-sm font-medium ${listingMode === 'buy' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30' : 'text-gray-600 hover:text-gray-900'}`}
+                  >
+                    <Home className="w-4 h-4" /><span>Buy</span>
+                  </button>
+                  <button
+                    onClick={() => onListingModeChange('rent')}
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-all text-sm font-medium ${listingMode === 'rent' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30' : 'text-gray-600 hover:text-gray-900'}`}
+                  >
+                    <Key className="w-4 h-4" /><span>Rent</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-base font-bold text-gray-900 mb-2">Price Range</h3>
+                <div className="flex items-center gap-2 lg:gap-3">
+                  <select
+                    value={filters.minPrice}
+                    onChange={(e) => onFilterChange('minPrice', e.target.value)}
+                    className="flex-1 px-3 lg:px-4 py-2.5 lg:py-3 border-2 border-gray-200 rounded-xl text-xs lg:text-sm font-medium focus:outline-none focus:border-blue-500 bg-white"
+                  >
+                    {priceOptions.min.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <span className="text-gray-400 text-xs">—</span>
+                  <select
+                    value={filters.maxPrice}
+                    onChange={(e) => onFilterChange('maxPrice', e.target.value)}
+                    className="flex-1 px-3 lg:px-4 py-2.5 lg:py-3 border-2 border-gray-200 rounded-xl text-xs lg:text-sm font-medium focus:outline-none focus:border-blue-500 bg-white"
+                  >
+                    {priceOptions.max.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-base font-bold text-gray-900 mb-2">Beds</h3>
+                <div className="grid grid-cols-6 gap-2">
+                  {['', '1', '2', '3', '4', '5'].map((bed) => (
+                    <button key={bed} onClick={() => onFilterChange('beds', bed)} className={`px-3 py-3 rounded-xl text-sm font-medium transition-all ${filters.beds === bed ? 'bg-blue-100 border-2 border-blue-500 text-blue-700' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300'}`}>
+                      {bed === '' ? 'Any' : bed === '5' ? '5+' : bed}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-base font-bold text-gray-900 mb-2">Baths</h3>
+                <div className="grid grid-cols-5 gap-2">
+                  {['', '1', '2', '3', '4'].map((bath) => (
+                    <button key={bath} onClick={() => onFilterChange('baths', bath)} className={`px-3 py-3 rounded-xl text-sm font-medium transition-all ${filters.baths === bath ? 'bg-blue-100 border-2 border-blue-500 text-blue-700' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300'}`}>
+                      {bath === '' ? 'Any' : bath === '4' ? '4+' : `${bath}+`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-base font-bold text-gray-900 mb-2">Status</h3>
+                <div className="grid grid-cols-4 gap-2">
+                  {[{ value: '', label: 'All' }, { value: 'new', label: 'New' }, { value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' }].map((opt) => (
+                    <button key={opt.value} onClick={() => onFilterChange('status', opt.value)} className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${filters.status === opt.value ? 'bg-blue-100 border-2 border-blue-500 text-blue-700' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300'}`}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-base font-bold text-gray-900 mb-2">Home Type</h3>
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                  {[{ value: '', label: 'All' }, { value: 'House', label: 'House' }, { value: 'Condo', label: 'Condo' }, { value: 'Townhouse', label: 'Townhouse' }, { value: 'Multi-family', label: 'Multi-family' }, { value: 'Commercial', label: 'Commercial' }, { value: 'Land', label: 'Land' }].map((type) => (
+                    <button key={type.value} onClick={() => onFilterChange('propertyType', type.value)} className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${filters.propertyType === type.value ? 'bg-blue-100 border-2 border-blue-500 text-blue-700' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300'}`}>
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-base font-bold text-gray-900 mb-2">Furnished</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {[{ value: '', label: 'Any' }, { value: 'true', label: 'Furnished' }, { value: 'false', label: 'Unfurnished' }].map((opt) => (
+                    <button key={opt.value} onClick={() => onFilterChange('furnished', opt.value)} className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${filters.furnished === opt.value ? 'bg-blue-100 border-2 border-blue-500 text-blue-700' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300'}`}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="fixed lg:relative bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 lg:border-t-0 lg:p-0 lg:mt-2">
+                <button onClick={() => setShowFilters(false)} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-full text-base font-bold shadow-lg transition-all">
+                  Apply Filters
                 </button>
               </div>
-            </div>
-
-            <div>
-              <h3 className="text-base font-bold text-gray-900 mb-2">Price Range</h3>
-              <div className="flex items-center gap-1.5">
-                <input type="text" value={filters.minPrice ? `$${parseInt(filters.minPrice).toLocaleString()}` : ''} placeholder="Min" className="flex-1 px-2 py-2.5 border-2 border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-blue-500 min-w-0" readOnly />
-                <span className="text-gray-400 text-xs">—</span>
-                <input type="text" value={filters.maxPrice ? `$${parseInt(filters.maxPrice).toLocaleString()}` : ''} placeholder="Max" className="flex-1 px-2 py-2.5 border-2 border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-blue-500 min-w-0" readOnly />
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-base font-bold text-gray-900 mb-2">Beds</h3>
-              <div className="grid grid-cols-6 gap-2">
-                {['', '1', '2', '3', '4', '5'].map((bed) => (
-                  <button key={bed} onClick={() => onFilterChange('beds', bed)} className={`px-3 py-3 rounded-xl text-sm font-medium transition-all ${filters.beds === bed ? 'bg-blue-100 border-2 border-blue-500 text-blue-700' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300'}`}>
-                    {bed === '' ? 'Any' : bed === '5' ? '5+' : bed}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-base font-bold text-gray-900 mb-2">Baths</h3>
-              <div className="grid grid-cols-4 gap-2">
-                {['', '1', '2', '3', '4'].map((bath) => (
-                  <button key={bath} onClick={() => onFilterChange('baths', bath)} className={`px-3 py-3 rounded-xl text-sm font-medium transition-all ${filters.baths === bath ? 'bg-blue-100 border-2 border-blue-500 text-blue-700' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300'}`}>
-                    {bath === '' ? 'Any' : bath === '4' ? '4+' : `${bath}+`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-base font-bold text-gray-900 mb-2">Home type</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {[{ value: '', label: 'All' }, { value: 'House', label: 'House' }, { value: 'Condo', label: 'Condo' }, { value: 'Townhouse', label: 'Townhouse' }, { value: 'Multi-family', label: 'Multi-family' }, { value: 'Commercial', label: 'Commercial' }, { value: 'Land', label: 'Land' }].map((type) => (
-                  <button key={type.value} onClick={() => onFilterChange('propertyType', type.value)} className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${filters.propertyType === type.value ? 'bg-blue-100 border-2 border-blue-500 text-blue-700' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300'}`}>
-                    {type.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200">
-              <button onClick={() => setShowFilters(false)} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-full text-base font-bold shadow-lg transition-all">
-                Apply Filters
-              </button>
             </div>
           </div>
         </div>
