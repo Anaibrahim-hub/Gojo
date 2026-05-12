@@ -5,25 +5,52 @@ import { Search, User, TrendingUp, Home, Key, MessageCircle, ChevronRight, X, Me
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useFavorites } from '@/lib/favorites-context';
-import { mockProperties } from '@/app/data/properties';
+import { type Property } from '@/app/data/properties';
 import SignInModal from './SignInModal';
 
-interface Property {
-  id: number;
-  price: number;
-  rent: number;
-  address: string;
-  city: string;
-  state: string;
-  zip: string;
-  beds: number;
-  baths: number;
-  sqft: number;
-  status: 'active' | 'pending' | 'new';
-  image: string;
-  lat: number;
-  lng: number;
-  type: 'sale' | 'rent' | 'both';
+const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
+
+function uidToNumId(uid: string): number {
+  let h = 0
+  for (let i = 0; i < uid.length; i++) h = (Math.imul(31, h) + uid.charCodeAt(i)) | 0
+  return Math.abs(h) + 1000
+}
+
+function apiListingToProperty(d: Record<string, unknown>): Property {
+  const photos = (d.photos as { url: string }[] | undefined) ?? []
+  return {
+    id: uidToNumId(d.ownerId as string),
+    firestoreId: d.ownerId as string,
+    price: 0,
+    rent: (d.monthlyRent as number) ?? 0,
+    address: (d.landmark as string) ||
+      [(d.subCity as string), (d.woreda as string)].filter(Boolean).join(', ') ||
+      (d.city as string) || '',
+    city: (d.city as string) ?? '',
+    state: '',
+    zip: '',
+    beds: (d.bedrooms as number) ?? 0,
+    baths: (d.bathrooms as number) ?? 0,
+    sqft: (d.areaSqm as number) ?? 0,
+    status: (d.status as string) === 'published' ? 'active' : 'pending',
+    image: photos[0]?.url ?? 'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=800',
+    photos: photos.map(p => p.url),
+    lat: (d.lat as number | null) ?? null,
+    lng: (d.lng as number | null) ?? null,
+    type: 'rent',
+    propertyType: (d.propertyType as string) ?? '',
+    furnished: ((d.amenities as string[] | undefined) ?? []).includes('Furnished'),
+    ownerDisplayName: (d.ownerDisplayName as string) ?? undefined,
+    ownerPhotoURL: (d.ownerPhotoURL as string) ?? undefined,
+    ownerEmail: (d.ownerEmail as string) ?? undefined,
+    subCity: (d.subCity as string) ?? undefined,
+    woreda: (d.woreda as string) ?? undefined,
+    kebele: (d.kebele as string) ?? undefined,
+    landmark: (d.landmark as string) ?? undefined,
+    availableFrom: (d.availableFrom as string | null) ?? null,
+    description: (d.description as string) ?? undefined,
+    amenities: (d.amenities as string[]) ?? [],
+  }
 }
 
 interface GeocodingFeature {
@@ -69,7 +96,7 @@ function saveRecent(item: RecentSearch) {
 
 export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageProps) {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, photoURL, signOut } = useAuth();
   const { isFavorite, toggleFavorite } = useFavorites();
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showSignInModal, setShowSignInModal] = useState(false);
@@ -84,6 +111,8 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
   const [suggestions, setSuggestions] = useState<GeocodingFeature[]>([]);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [apiListings, setApiListings] = useState<Property[]>([]);
+  const [loadingListings, setLoadingListings] = useState(true);
 
   const recommendedRef = useRef<HTMLDivElement>(null);
   const forSaleRef = useRef<HTMLDivElement>(null);
@@ -123,6 +152,18 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
     return () => clearTimeout(timer);
   }, [inputValue]);
 
+  useEffect(() => {
+    if (!WORKER_URL) { setLoadingListings(false); return }
+    fetch(`${WORKER_URL}/listings`)
+      .then(async res => {
+        if (!res.ok) return
+        const data = await res.json() as Record<string, unknown>[]
+        setApiListings(data.map(apiListingToProperty))
+      })
+      .catch(() => {/* Worker unavailable */})
+      .finally(() => setLoadingListings(false))
+  }, [])
+
   const openSearchModal = () => {
     setInputValue('');
     setSuggestions([]);
@@ -144,140 +185,9 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
     onNavigateToMap(searchListingMode, { q: item.text, lat: item.lat, lng: item.lng, zoom: item.zoom });
   };
 
-  const recommendations: (Property & { badge: string | null })[] = [
-    {
-      id: 1,
-      image: 'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=800',
-      price: 35000000,
-      rent: 120000,
-      address: 'Africa Avenue, Bole',
-      city: 'Addis Ababa',
-      state: 'AA',
-      zip: '1000',
-      beds: 4,
-      baths: 3,
-      sqft: 3200,
-      status: 'new' as const,
-      lat: 8.9806,
-      lng: 38.8090,
-      type: 'both' as const,
-      badge: 'Hot',
-    },
-    {
-      id: 2,
-      image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800',
-      price: 25000000,
-      rent: 95000,
-      address: 'Gerji Mebrat Haile',
-      city: 'Addis Ababa',
-      state: 'AA',
-      zip: '1000',
-      beds: 4,
-      baths: 3,
-      sqft: 2800,
-      status: 'active' as const,
-      lat: 8.9990,
-      lng: 38.8220,
-      type: 'sale' as const,
-      badge: 'New',
-    },
-    {
-      id: 3,
-      image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800',
-      price: 14000000,
-      rent: 55000,
-      address: 'CMC Road, CMC',
-      city: 'Addis Ababa',
-      state: 'AA',
-      zip: '1000',
-      beds: 3,
-      baths: 2,
-      sqft: 2100,
-      status: 'pending' as const,
-      lat: 9.0330,
-      lng: 38.8194,
-      type: 'both' as const,
-      badge: null,
-    },
-  ];
-
-  const forSale: Property[] = [
-    {
-      id: 4,
-      image: 'https://images.unsplash.com/photo-1605276374104-dee2a0ed3cd6?w=800',
-      price: 48000000,
-      rent: 175000,
-      address: 'Old Airport Road, Nifas Silk',
-      city: 'Addis Ababa',
-      state: 'AA',
-      zip: '1000',
-      beds: 5,
-      baths: 4,
-      sqft: 4200,
-      status: 'new' as const,
-      lat: 8.9930,
-      lng: 38.7930,
-      type: 'sale' as const,
-    },
-    {
-      id: 5,
-      image: 'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?w=800',
-      price: 11500000,
-      rent: 42000,
-      address: 'Sarbet, Around Gotera',
-      city: 'Addis Ababa',
-      state: 'AA',
-      zip: '1000',
-      beds: 2,
-      baths: 2,
-      sqft: 1400,
-      status: 'active' as const,
-      lat: 9.0050,
-      lng: 38.7530,
-      type: 'both' as const,
-    },
-  ];
-
-  const forRent: (Property & { available: boolean; petFriendly: boolean })[] = [
-    {
-      id: 6,
-      image: 'https://images.unsplash.com/photo-1599809275671-b5942cabc7a2?w=800',
-      price: 0,
-      rent: 32000,
-      address: 'Kazanchis, Near ECA',
-      city: 'Addis Ababa',
-      state: 'AA',
-      zip: '1000',
-      beds: 2,
-      baths: 1,
-      sqft: 1100,
-      status: 'active' as const,
-      lat: 9.0180,
-      lng: 38.7640,
-      type: 'rent' as const,
-      available: true,
-      petFriendly: true,
-    },
-    {
-      id: 7,
-      image: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800',
-      price: 0,
-      rent: 22000,
-      address: 'Summit Abo, Yeka',
-      city: 'Addis Ababa',
-      state: 'AA',
-      zip: '1000',
-      beds: 2,
-      baths: 1,
-      sqft: 1000,
-      status: 'pending' as const,
-      lat: 8.9860,
-      lng: 38.8220,
-      type: 'rent' as const,
-      available: true,
-      petFriendly: false,
-    },
-  ];
+  const recommendations = apiListings.slice(0, 3)
+  const forSale = apiListings.filter(p => p.type === 'sale' || p.type === 'both')
+  const forRent = apiListings.filter(p => p.type === 'rent' || p.type === 'both')
 
   const footerLinks = {
     findUs: [
@@ -309,15 +219,17 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowMenu(true)}
-              className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-all"
-            >
-              <Menu className="w-6 h-6 text-gray-700" />
-            </button>
+            {user && (
+              <button
+                onClick={() => setShowMenu(true)}
+                className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-all"
+              >
+                <Menu className="w-6 h-6 text-gray-700" />
+              </button>
+            )}
 
             <div className="text-xl lg:text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-              Gojo
+              Yevilla
             </div>
           </div>
 
@@ -330,11 +242,12 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                     onClick={() => setShowUserMenu((v) => !v)}
                     className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-gray-100 transition-all"
                   >
-                    {user.photoURL
-                      ? <img src={user.photoURL} alt={user.displayName || ''} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+                    {photoURL
+                      ? <img src={photoURL} alt={user.displayName || ''} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
                       : <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">{user.displayName?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}</div>
                     }
                     <span className="text-sm font-medium text-gray-700 max-w-[120px] truncate">{user.displayName ?? user.email}</span>
+                    <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? '-rotate-90' : 'rotate-90'}`} />
                   </button>
                   {showUserMenu && (
                     <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50">
@@ -351,7 +264,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                         </button>
                         <div className="border-t border-gray-100 my-1" />
                         <button onClick={() => { router.push('/list-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
-                          <Key className="w-4 h-4 text-gray-400" />List My Home for Rent
+                          <Key className="w-4 h-4 text-gray-400" />My Listing
                         </button>
                         <button onClick={() => { router.push('/sell-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
                           <Tag className="w-4 h-4 text-gray-400" />Sell My Home
@@ -420,83 +333,90 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
         <div className="flex items-center justify-between mb-3 lg:mb-4">
           <h2 className="text-xl lg:text-3xl font-bold text-gray-900">{'Recommended for You'}</h2>
-          <button onClick={() => onNavigateToMap('buy')} className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base">
+          <button onClick={() => onNavigateToMap('rent')} className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base">
             {'View All'} <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
           </button>
         </div>
-        <div
-          ref={recommendedRef}
-          className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide lg:overflow-x-auto"
-          onScroll={(e) => {
-            const target = e.target as HTMLDivElement;
-            const scrollLeft = target.scrollLeft;
-            const itemWidth = 288 + 12; // 72*4 (w-72) + 12 (gap-3)
-            const index = Math.round(scrollLeft / itemWidth);
-            setRecommendedIndex(index);
-          }}
-        >
-          {recommendations.map((property) => (
+        {loadingListings ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          </div>
+        ) : recommendations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <Home className="w-10 h-10 text-gray-300 mb-3" />
+            <p className="text-gray-500 text-sm">No listings yet — check back soon</p>
+          </div>
+        ) : (
+          <>
             <div
-              key={property.id}
-              className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all snap-start cursor-pointer group"
-              onClick={() => onPropertyClick(property)}
-            >
-              <div className="relative h-44 lg:h-48 overflow-hidden">
-                <img
-                  src={property.image}
-                  alt={property.address}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                <button
-                  onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-                  className="absolute top-2 lg:top-3 left-2 lg:left-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
-                >
-                  <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
-                </button>
-                {property.badge && (
-                  <div className={`absolute top-2 lg:top-3 right-2 lg:right-3 ${property.badge === 'Hot' ? 'bg-red-500' : 'bg-green-500'} text-white px-2 lg:px-3 py-1 rounded-full text-xs font-bold shadow-lg`}>
-                    {property.badge}
-                  </div>
-                )}
-                <div className="absolute bottom-2 lg:bottom-3 left-2 lg:left-3 right-2 lg:right-3">
-                  <div className="text-white text-xl lg:text-2xl font-bold">{formatPrice(property.price)}</div>
-                  <div className="text-white/90 text-xs lg:text-sm">{property.city}, {property.state}</div>
-                </div>
-              </div>
-              <div className="p-3 lg:p-4">
-                <div className="flex items-center gap-3 lg:gap-4 text-gray-600 text-xs lg:text-sm">
-                  <span>{property.beds} {'beds'}</span>
-                  <span>•</span>
-                  <span>{property.baths} {'baths'}</span>
-                  <span>•</span>
-                  <span>{property.sqft.toLocaleString()} {'sqft'}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-center gap-2 mt-2 lg:hidden">
-          {recommendations.map((_, index) => (
-            <button
-              key={index}
-              onClick={() => {
-                if (recommendedRef.current) {
-                  const itemWidth = 288 + 12;
-                  recommendedRef.current.scrollTo({ left: index * itemWidth, behavior: 'smooth' });
-                }
+              ref={recommendedRef}
+              className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide lg:overflow-x-auto"
+              onScroll={(e) => {
+                const target = e.target as HTMLDivElement;
+                const index = Math.round(target.scrollLeft / (288 + 12));
+                setRecommendedIndex(index);
               }}
-              className={`w-2 h-2 rounded-full transition-all ${
-                index === recommendedIndex ? 'bg-blue-600 w-6' : 'bg-gray-300'
-              }`}
-            />
-          ))}
-        </div>
+            >
+              {recommendations.map((property) => (
+                <div
+                  key={property.id}
+                  className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all snap-start cursor-pointer group"
+                  onClick={() => onPropertyClick(property)}
+                >
+                  <div className="relative h-44 lg:h-48 overflow-hidden">
+                    <img
+                      src={property.image}
+                      alt={property.address}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
+                      className="absolute top-2 lg:top-3 left-2 lg:left-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
+                    >
+                      <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                    </button>
+                    <div className="absolute bottom-2 lg:bottom-3 left-2 lg:left-3 right-2 lg:right-3">
+                      <div className="text-white text-xl lg:text-2xl font-bold">
+                        {property.type === 'rent' ? `Br ${property.rent.toLocaleString()}/mo` : formatPrice(property.price)}
+                      </div>
+                      <div className="text-white/90 text-xs lg:text-sm">{property.city}{property.state ? `, ${property.state}` : ''}</div>
+                    </div>
+                  </div>
+                  <div className="p-3 lg:p-4">
+                    <div className="flex items-center gap-3 lg:gap-4 text-gray-600 text-xs lg:text-sm">
+                      <span>{property.beds} {'beds'}</span>
+                      <span>•</span>
+                      <span>{property.baths} {'baths'}</span>
+                      <span>•</span>
+                      <span>{property.sqft.toLocaleString()} {'sqft'}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-center gap-2 mt-2 lg:hidden">
+              {recommendations.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => {
+                    if (recommendedRef.current) {
+                      recommendedRef.current.scrollTo({ left: index * (288 + 12), behavior: 'smooth' });
+                    }
+                  }}
+                  className={`w-2 h-2 rounded-full transition-all ${
+                    index === recommendedIndex ? 'bg-blue-600 w-6' : 'bg-gray-300'
+                  }`}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       {/* Saved Listings — signed-in users with at least one favorite */}
-      {user && mockProperties.filter((p) => isFavorite(p.id)).length > 0 && (() => {
-        const saved = mockProperties.filter((p) => isFavorite(p.id));
+      {user && apiListings.filter((p) => isFavorite(p.id)).length > 0 && (() => {
+        const saved = apiListings.filter((p) => isFavorite(p.id));
         return (
           <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
             <div className="flex items-center justify-between mb-3 lg:mb-4">
@@ -553,6 +473,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       })()}
 
       {/* For Sale */}
+      {(!loadingListings && forSale.length === 0) ? null : (
       <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
         <div className="flex items-center justify-between mb-3 lg:mb-4">
           <div className="flex items-center gap-2">
@@ -563,70 +484,76 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
             {'View All'} <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
           </button>
         </div>
-        <div
-          ref={forSaleRef}
-          className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide lg:overflow-x-auto"
-          onScroll={(e) => {
-            const target = e.target as HTMLDivElement;
-            const scrollLeft = target.scrollLeft;
-            const itemWidth = 288 + 12;
-            const index = Math.round(scrollLeft / itemWidth);
-            setForSaleIndex(index);
-          }}
-        >
-          {forSale.map((property) => (
+        {loadingListings ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          </div>
+        ) : (
+          <>
             <div
-              key={property.id}
-              className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all snap-start cursor-pointer group"
-              onClick={() => onPropertyClick(property)}
-            >
-              <div className="relative h-44 lg:h-48 overflow-hidden">
-                <img
-                  src={property.image}
-                  alt={property.address}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                <button
-                  onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-                  className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
-                >
-                  <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
-                </button>
-              </div>
-              <div className="p-4 lg:p-5">
-                <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
-                  {formatPrice(property.price)}
-                </div>
-                <div className="flex items-center gap-2 lg:gap-3 text-gray-600 mb-2 lg:mb-3 text-xs lg:text-sm">
-                  <span>{property.beds} {'bd'}</span>
-                  <span>•</span>
-                  <span>{property.baths} {'ba'}</span>
-                  <span>•</span>
-                  <span>{property.sqft.toLocaleString()} {'sqft'}</span>
-                </div>
-                <div className="text-gray-700 font-medium text-sm lg:text-base">{property.city}, {property.state}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-center gap-2 mt-2 lg:hidden">
-          {forSale.map((_, index) => (
-            <button
-              key={index}
-              onClick={() => {
-                if (forSaleRef.current) {
-                  const itemWidth = 288 + 12;
-                  forSaleRef.current.scrollTo({ left: index * itemWidth, behavior: 'smooth' });
-                }
+              ref={forSaleRef}
+              className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide lg:overflow-x-auto"
+              onScroll={(e) => {
+                const target = e.target as HTMLDivElement;
+                const index = Math.round(target.scrollLeft / (288 + 12));
+                setForSaleIndex(index);
               }}
-              className={`w-2 h-2 rounded-full transition-all ${
-                index === forSaleIndex ? 'bg-blue-600 w-6' : 'bg-gray-300'
-              }`}
-            />
-          ))}
-        </div>
+            >
+              {forSale.map((property) => (
+                <div
+                  key={property.id}
+                  className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all snap-start cursor-pointer group"
+                  onClick={() => onPropertyClick(property)}
+                >
+                  <div className="relative h-44 lg:h-48 overflow-hidden">
+                    <img
+                      src={property.image}
+                      alt={property.address}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
+                      className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
+                    >
+                      <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                    </button>
+                  </div>
+                  <div className="p-4 lg:p-5">
+                    <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
+                      {formatPrice(property.price)}
+                    </div>
+                    <div className="flex items-center gap-2 lg:gap-3 text-gray-600 mb-2 lg:mb-3 text-xs lg:text-sm">
+                      <span>{property.beds} {'bd'}</span>
+                      <span>•</span>
+                      <span>{property.baths} {'ba'}</span>
+                      <span>•</span>
+                      <span>{property.sqft.toLocaleString()} {'sqft'}</span>
+                    </div>
+                    <div className="text-gray-700 font-medium text-sm lg:text-base">{property.city}{property.state ? `, ${property.state}` : ''}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-center gap-2 mt-2 lg:hidden">
+              {forSale.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => {
+                    if (forSaleRef.current) {
+                      forSaleRef.current.scrollTo({ left: index * (288 + 12), behavior: 'smooth' });
+                    }
+                  }}
+                  className={`w-2 h-2 rounded-full transition-all ${
+                    index === forSaleIndex ? 'bg-blue-600 w-6' : 'bg-gray-300'
+                  }`}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </section>
+      )}
 
       {/* For Rent */}
       <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
@@ -639,79 +566,78 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
             {'View All'} <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
           </button>
         </div>
-        <div
-          ref={forRentRef}
-          className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide lg:overflow-x-auto"
-          onScroll={(e) => {
-            const target = e.target as HTMLDivElement;
-            const scrollLeft = target.scrollLeft;
-            const itemWidth = 288 + 12;
-            const index = Math.round(scrollLeft / itemWidth);
-            setForRentIndex(index);
-          }}
-        >
-          {forRent.map((property) => (
+        {loadingListings ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          </div>
+        ) : forRent.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <Key className="w-10 h-10 text-gray-300 mb-3" />
+            <p className="text-gray-500 text-sm">No rentals listed yet — check back soon</p>
+          </div>
+        ) : (
+          <>
             <div
-              key={property.id}
-              className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all snap-start cursor-pointer group"
-              onClick={() => onPropertyClick(property)}
-            >
-              <div className="relative h-44 lg:h-48 overflow-hidden">
-                <img
-                  src={property.image}
-                  alt={property.address}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                <button
-                  onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-                  className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
-                >
-                  <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
-                </button>
-              </div>
-              <div className="p-4 lg:p-5">
-                <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
-                  Br {property.rent.toLocaleString()}/mo
-                </div>
-                <div className="flex items-center gap-2 mb-2 lg:mb-3 flex-wrap">
-                  {property.available && (
-                    <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
-                      {'Available Now'}
-                    </span>
-                  )}
-                  {property.petFriendly && (
-                    <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full">
-                      🐾 {'Pet Friendly'}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 lg:gap-3 text-gray-600 mb-2 text-xs lg:text-sm">
-                  <span>{property.beds} {'bd'}</span>
-                  <span>•</span>
-                  <span>{property.baths} {'ba'}</span>
-                </div>
-                <div className="text-gray-700 font-medium text-sm lg:text-base">{property.city}, {property.state}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-center gap-2 mt-2 lg:hidden">
-          {forRent.map((_, index) => (
-            <button
-              key={index}
-              onClick={() => {
-                if (forRentRef.current) {
-                  const itemWidth = 288 + 12;
-                  forRentRef.current.scrollTo({ left: index * itemWidth, behavior: 'smooth' });
-                }
+              ref={forRentRef}
+              className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide lg:overflow-x-auto"
+              onScroll={(e) => {
+                const target = e.target as HTMLDivElement;
+                const index = Math.round(target.scrollLeft / (288 + 12));
+                setForRentIndex(index);
               }}
-              className={`w-2 h-2 rounded-full transition-all ${
-                index === forRentIndex ? 'bg-blue-600 w-6' : 'bg-gray-300'
-              }`}
-            />
-          ))}
-        </div>
+            >
+              {forRent.map((property) => (
+                <div
+                  key={property.id}
+                  className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all snap-start cursor-pointer group"
+                  onClick={() => onPropertyClick(property)}
+                >
+                  <div className="relative h-44 lg:h-48 overflow-hidden">
+                    <img
+                      src={property.image}
+                      alt={property.address}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
+                      className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
+                    >
+                      <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                    </button>
+                  </div>
+                  <div className="p-4 lg:p-5">
+                    <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
+                      Br {property.rent.toLocaleString()}/mo
+                    </div>
+                    <div className="flex items-center gap-2 lg:gap-3 text-gray-600 mb-2 text-xs lg:text-sm">
+                      <span>{property.beds} {'bd'}</span>
+                      <span>•</span>
+                      <span>{property.baths} {'ba'}</span>
+                      {property.sqft > 0 && <><span>•</span><span>{property.sqft.toLocaleString()} sqft</span></>}
+                    </div>
+                    <div className="text-gray-700 font-medium text-sm lg:text-base">{property.city}{property.state ? `, ${property.state}` : ''}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-center gap-2 mt-2 lg:hidden">
+              {forRent.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => {
+                    if (forRentRef.current) {
+                      forRentRef.current.scrollTo({ left: index * (288 + 12), behavior: 'smooth' });
+                    }
+                  }}
+                  className={`w-2 h-2 rounded-full transition-all ${
+                    index === forRentIndex ? 'bg-blue-600 w-6' : 'bg-gray-300'
+                  }`}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       {/* Talk to an Agent */}
@@ -778,7 +704,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
           </button>
 
           <p className="text-xs text-gray-500 leading-relaxed text-center">
-            By submitting this form, I agree to receive calls and SMS messages from Gojo for the purpose of updates and promotions. Messages may be sent on a recurring basis and frequency will vary. Message and data rates may apply. Consent to receive SMS messages is not required as a condition for purchasing any goods or services. To unsubscribe from SMS messages, reply "STOP" at any time. For assistance, reply "HELP" or visit our <a href="#" className="text-blue-600 hover:underline">Support Page</a> and <a href="#" className="text-blue-600 hover:underline">FAQ</a>. By proceeding, you confirm that you are creating a Gojo account and have read and agree to our <a href="#" className="text-blue-600 hover:underline">Privacy Policy</a> and <a href="#" className="text-blue-600 hover:underline">Terms of Use</a>.
+            By submitting this form, I agree to receive calls and SMS messages from Yevilla for the purpose of updates and promotions. Messages may be sent on a recurring basis and frequency will vary. Message and data rates may apply. Consent to receive SMS messages is not required as a condition for purchasing any goods or services. To unsubscribe from SMS messages, reply "STOP" at any time. For assistance, reply "HELP" or visit our <a href="#" className="text-blue-600 hover:underline">Support Page</a> and <a href="#" className="text-blue-600 hover:underline">FAQ</a>. By proceeding, you confirm that you are creating a Yevilla account and have read and agree to our <a href="#" className="text-blue-600 hover:underline">Privacy Policy</a> and <a href="#" className="text-blue-600 hover:underline">Terms of Use</a>.
           </p>
         </form>
       </section>
@@ -841,7 +767,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
           </div>
 
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p>&copy; 2026 Gojo. All rights reserved.</p>
+            <p>&copy; 2026 Yevilla. All rights reserved.</p>
           </div>
         </div>
       </footer>
@@ -953,7 +879,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       <SignInModal open={showSignInModal} onClose={() => setShowSignInModal(false)} />
 
       {/* Mobile Menu */}
-      {showMenu && (
+      {showMenu && user && (
         <>
           <div
             className="fixed inset-0 bg-black/50 z-[1000] lg:hidden"
@@ -962,7 +888,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
           <div className="fixed top-0 left-0 h-full w-80 bg-white z-[1001] shadow-2xl lg:hidden transform transition-transform">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
               <div className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                Gojo
+                Yevilla
               </div>
               <button
                 onClick={() => setShowMenu(false)}
@@ -975,8 +901,8 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
             <div className="p-4 space-y-1">
               {user ? (
                 <div className="flex items-center gap-3 px-4 py-3 mb-1">
-                  {user.photoURL
-                    ? <img src={user.photoURL} alt={user.displayName || ''} className="w-9 h-9 rounded-full object-cover flex-shrink-0" referrerPolicy="no-referrer" />
+                  {photoURL
+                    ? <img src={photoURL} alt={user.displayName || ''} className="w-9 h-9 rounded-full object-cover flex-shrink-0" referrerPolicy="no-referrer" />
                     : <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">{user.displayName?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}</div>
                   }
                   <div className="min-w-0">
@@ -1008,7 +934,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
 
               <button onClick={() => { router.push('/list-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
                 <Key className="w-5 h-5" />
-                List My Home for Rent
+                My Listing
               </button>
 
               <button onClick={() => { router.push('/sell-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">

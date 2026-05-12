@@ -78,7 +78,7 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const { user, signOut } = useAuth();
+  const { user, photoURL, signOut } = useAuth();
 
   const buyPriceOptions = {
     min: [
@@ -183,18 +183,45 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
     <div className="bg-white shadow-lg border-b border-gray-100">
       <div className="p-3 lg:p-5 space-y-3">
         <div className="flex items-center gap-2 lg:gap-4 flex-wrap">
-          <button
-            onClick={() => setShowMenu(true)}
-            className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-all"
-          >
-            <Menu className="w-6 h-6 text-gray-700" />
-          </button>
+          {user && (
+            <button
+              onClick={() => setShowMenu(true)}
+              className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-all"
+            >
+              <Menu className="w-6 h-6 text-gray-700" />
+            </button>
+          )}
 
           <div
             onClick={onLogoClick}
-            className="hidden lg:block text-xl lg:text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent cursor-pointer hover:scale-105 transition-transform"
+            className={`${!user ? 'block' : 'hidden'} lg:block text-xl lg:text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent cursor-pointer hover:scale-105 transition-transform`}
           >
-            Gojo
+            Yevilla
+          </div>
+
+          <div className="hidden lg:flex bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-1.5 gap-1 shadow-inner flex-shrink-0">
+            <button
+              onClick={() => onListingModeChange('buy')}
+              className={`flex items-center gap-2 px-4 lg:px-5 py-2.5 rounded-lg transition-all text-sm lg:text-base font-medium ${
+                listingMode === 'buy'
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Home className="w-4 h-4" />
+              <span>Buy</span>
+            </button>
+            <button
+              onClick={() => onListingModeChange('rent')}
+              className={`flex items-center gap-2 px-4 lg:px-5 py-2.5 rounded-lg transition-all text-sm lg:text-base font-medium ${
+                listingMode === 'rent'
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Key className="w-4 h-4" />
+              <span>Rent</span>
+            </button>
           </div>
 
           <div
@@ -214,6 +241,14 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
               </button>
             )}
           </div>
+
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="hidden lg:flex items-center gap-2 px-5 py-2.5 bg-white border-2 border-gray-200 rounded-xl hover:border-blue-500 transition-all font-medium text-gray-700 flex-shrink-0"
+          >
+            <SlidersHorizontal className="w-5 h-5 text-blue-600" />
+            <span>Filters</span>
+          </button>
 
           <button
             onClick={() => setShowFilters(!showFilters)}
@@ -238,18 +273,19 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
             </button>
           )}
 
-          <div className="hidden lg:flex items-center gap-3 ml-auto">
+          <div className="hidden lg:flex items-center gap-3">
             {user ? (
               <div className="relative" ref={userMenuRef}>
                 <button
                   onClick={() => setShowUserMenu((v) => !v)}
                   className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-gray-100 transition-all"
                 >
-                  {user.photoURL
-                    ? <img src={user.photoURL} alt={user.displayName || ''} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+                  {photoURL
+                    ? <img src={photoURL} alt={user.displayName || ''} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
                     : <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">{user.displayName?.[0] ?? '?'}</div>
                   }
                   <span className="text-sm font-medium text-gray-700 max-w-[120px] truncate">{user.displayName}</span>
+                  <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? '-rotate-90' : 'rotate-90'}`} />
                 </button>
                 {showUserMenu && (
                   <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50">
@@ -266,7 +302,7 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
                       </button>
                       <div className="border-t border-gray-100 my-1" />
                       <button onClick={() => { router.push('/list-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
-                        <Key className="w-4 h-4 text-gray-400" />List My Home for Rent
+                        <Key className="w-4 h-4 text-gray-400" />My Listing
                       </button>
                       <button onClick={() => { router.push('/sell-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
                         <Tag className="w-4 h-4 text-gray-400" />Sell My Home
@@ -300,49 +336,15 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
           </div>
         </div>
 
-        <div className="hidden lg:flex items-center justify-between">
-          <div className="flex bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-1.5 gap-1 shadow-inner">
-            <button
-              onClick={() => onListingModeChange('buy')}
-              className={`flex items-center gap-2 px-4 lg:px-5 py-2.5 rounded-lg transition-all text-sm lg:text-base font-medium ${
-                listingMode === 'buy'
-                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <Home className="w-4 h-4" />
-              <span>Buy</span>
-            </button>
-            <button
-              onClick={() => onListingModeChange('rent')}
-              className={`flex items-center gap-2 px-4 lg:px-5 py-2.5 rounded-lg transition-all text-sm lg:text-base font-medium ${
-                listingMode === 'rent'
-                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <Key className="w-4 h-4" />
-              <span>Rent</span>
-            </button>
-          </div>
-
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-white border-2 border-gray-200 rounded-xl hover:border-blue-500 transition-all font-medium text-gray-700"
-          >
-            <SlidersHorizontal className="w-5 h-5 text-blue-600" />
-            <span>Filters</span>
-          </button>
-        </div>
       </div>
 
       {showFilters && (
         <div
-          className="fixed inset-0 bg-black/50 z-[1000] flex items-start justify-center p-0 lg:p-6 lg:overflow-y-auto"
+          className="fixed inset-0 bg-black/50 z-[1000] flex items-start justify-center p-0 lg:p-6 lg:items-center"
           onClick={() => setShowFilters(false)}
         >
           <div
-            className="bg-white w-full h-full lg:h-auto lg:max-w-2xl lg:rounded-2xl overflow-y-auto"
+            className="bg-white w-full h-full lg:h-auto lg:max-w-2xl lg:rounded-2xl overflow-y-auto lg:overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-4 lg:p-6 space-y-5 pb-24 lg:pb-6">
@@ -419,17 +421,6 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
               </div>
 
               <div>
-                <h3 className="text-base font-bold text-gray-900 mb-2">Status</h3>
-                <div className="grid grid-cols-4 gap-2">
-                  {[{ value: '', label: 'All' }, { value: 'new', label: 'New' }, { value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' }].map((opt) => (
-                    <button key={opt.value} onClick={() => onFilterChange('status', opt.value)} className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${filters.status === opt.value ? 'bg-blue-100 border-2 border-blue-500 text-blue-700' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300'}`}>
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
                 <h3 className="text-base font-bold text-gray-900 mb-2">Home Type</h3>
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                   {[{ value: '', label: 'All' }, { value: 'House', label: 'House' }, { value: 'Condo', label: 'Condo' }, { value: 'Townhouse', label: 'Townhouse' }, { value: 'Multi-family', label: 'Multi-family' }, { value: 'Commercial', label: 'Commercial' }, { value: 'Land', label: 'Land' }].map((type) => (
@@ -461,12 +452,12 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
         </div>
       )}
 
-      {showMenu && (
+      {showMenu && user && (
         <>
           <div className="fixed inset-0 bg-black/50 z-[1000] lg:hidden" onClick={() => setShowMenu(false)} />
           <div className="fixed top-0 left-0 h-full w-80 bg-white z-[1001] shadow-2xl lg:hidden">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Gojo</div>
+              <div className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Yevilla</div>
               <button onClick={() => setShowMenu(false)} className="p-2 hover:bg-gray-100 rounded-full transition-all">
                 <X className="w-6 h-6 text-gray-600" />
               </button>
@@ -474,8 +465,8 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
             <div className="p-4 space-y-1">
               {user ? (
                 <div className="flex items-center gap-3 px-4 py-3 mb-1">
-                  {user.photoURL
-                    ? <img src={user.photoURL} alt={user.displayName || ''} className="w-9 h-9 rounded-full object-cover flex-shrink-0" referrerPolicy="no-referrer" />
+                  {photoURL
+                    ? <img src={photoURL} alt={user.displayName || ''} className="w-9 h-9 rounded-full object-cover flex-shrink-0" referrerPolicy="no-referrer" />
                     : <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">{user.displayName?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}</div>
                   }
                   <div className="min-w-0">
@@ -489,7 +480,7 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
               <button onClick={() => { router.push('/favorites'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Heart className="w-5 h-5" />Favorites</button>
               <button onClick={() => { router.push('/settings'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Settings className="w-5 h-5" />Settings</button>
               <div className="border-t border-gray-200 my-2"></div>
-              <button onClick={() => { router.push('/list-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Key className="w-5 h-5" />List My Home for Rent</button>
+              <button onClick={() => { router.push('/list-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Key className="w-5 h-5" />My Listing</button>
               <button onClick={() => { router.push('/sell-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Tag className="w-5 h-5" />Sell My Home</button>
               <button onClick={() => { router.push('/become-an-agent'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><UserPlus className="w-5 h-5" />Become an Agent</button>
               <div className="border-t border-gray-200 my-2"></div>
