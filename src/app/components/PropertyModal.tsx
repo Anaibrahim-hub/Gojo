@@ -53,7 +53,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
     setSlideshowIndex(null);
   };
 
-  const hasOwner = !property.isAgent && !property.agentId && (property.ownerDisplayName || property.ownerEmail);
+  const hasOwner = !property.agentId && (property.ownerDisplayName || property.ownerEmail);
 
   return (
     <>
@@ -61,7 +61,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
         <div className="flex items-start gap-4 w-full h-full lg:h-auto justify-center">
 
           {/* Main property modal */}
-          <div className="bg-white rounded-2xl max-w-5xl w-full h-full lg:max-h-[90vh] overflow-hidden shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white lg:rounded-2xl max-w-5xl w-full h-full lg:max-h-[90vh] overflow-hidden shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex-shrink-0 bg-white/95 backdrop-blur-md border-b border-gray-200 flex items-center justify-between p-4 lg:p-6 z-10 shadow-sm">
               <div className="flex-1 min-w-0">
                 <h2 className="text-2xl lg:text-4xl font-bold truncate text-black">
@@ -187,43 +187,21 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
                   </div>
                 )}
 
-                {/* Mobile contact card */}
-                {hasOwner && (
-                  <div className="lg:hidden border border-gray-100 rounded-2xl overflow-hidden">
-                    <div className="bg-gradient-to-br from-blue-600 to-indigo-600 px-5 pt-6 pb-8 text-center">
-                      <div className="relative inline-block">
-                        {ownerPhoto ? (
-                          <img
-                            src={ownerPhoto}
-                            alt={property.ownerDisplayName ?? 'Owner'}
-                            className="w-16 h-16 rounded-full object-cover ring-4 ring-white/80 shadow-xl mx-auto"
-                          />
-                        ) : (
-                          <div className="w-16 h-16 rounded-full bg-white/20 ring-4 ring-white/80 shadow-xl mx-auto flex items-center justify-center">
-                            <User className="w-8 h-8 text-white/70" />
-                          </div>
-                        )}
-                        <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-400 border-2 border-white rounded-full" />
-                      </div>
-                      <p className="text-white font-bold text-base mt-2">{property.ownerDisplayName ?? 'Property Owner'}</p>
-                      <p className="text-blue-200 text-xs mt-0.5">Property Owner</p>
-                    </div>
-                    <div className="px-5 py-4 -mt-4 bg-white rounded-t-2xl relative">
-                      {property.ownerEmail && (
-                        <a
-                          href={`mailto:${property.ownerEmail}`}
-                          className="flex items-center justify-center gap-2 w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl transition-colors text-sm font-semibold shadow-md shadow-blue-500/25"
-                        >
-                          <Mail className="w-4 h-4" />
-                          Email Owner
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                )}
-
               </div>
             </div>
+
+            {/* Mobile sticky contact button */}
+            {hasOwner && property.ownerEmail && (
+              <div className="lg:hidden flex-shrink-0 p-4 border-t border-gray-100 bg-white">
+                <a
+                  href={`mailto:${property.ownerEmail}`}
+                  className="flex items-center justify-center gap-2 w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl transition-colors text-sm font-semibold shadow-md shadow-blue-500/25"
+                >
+                  <Mail className="w-4 h-4" />
+                  {property.isAgent ? 'Contact Agent' : 'Contact Owner'}
+                </a>
+              </div>
+            )}
           </div>
 
           {/* Owner card — shown to the right on desktop */}

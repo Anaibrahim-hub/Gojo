@@ -1,14 +1,15 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import MapView from './MapView'
 import PropertyCard from './PropertyCard'
 import FilterPanel from './FilterPanel'
 import PropertyModal from './PropertyModal'
 import SignInModal from './SignInModal'
-import { Map, List, ChevronDown } from 'lucide-react'
-import { mockProperties, type Property } from '@/app/data/properties'
+import { Map, List, ChevronDown, Loader2, Home } from 'lucide-react'
+import { type Property, apiListingToProperty } from '@/app/data/properties'
+const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
 
 export default function ListingsView() {
   const router = useRouter()
@@ -42,6 +43,24 @@ export default function ListingsView() {
   const [listingMode, setListingMode] = useState<'buy' | 'rent'>(initialMode)
   const [sortBy, setSortBy] = useState<'recommended' | 'price-low' | 'price-high' | 'beds' | 'baths' | 'sqft'>('recommended')
   const [showSignInModal, setShowSignInModal] = useState(false)
+  const [apiListings, setApiListings] = useState<Property[]>([])
+  const [loadingListings, setLoadingListings] = useState(true)
+
+  useEffect(() => {
+    if (mobileView === 'map') window.dispatchEvent(new Event('resize'))
+  }, [mobileView])
+
+  useEffect(() => {
+    if (!WORKER_URL) { setLoadingListings(false); return }
+    fetch(`${WORKER_URL}/listings`)
+      .then(async res => {
+        if (!res.ok) return
+        const data = await res.json() as Record<string, unknown>[]
+        setApiListings(data.map(apiListingToProperty))
+      })
+      .catch(() => {/* Worker unavailable — show empty state */})
+      .finally(() => setLoadingListings(false))
+  }, [])
 
   const handleFilterChange = (key: string, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }))
@@ -53,14 +72,14 @@ export default function ListingsView() {
 
   const filteredProperties = useMemo(() => {
     const q = searchQuery.toLowerCase().trim()
-    const filtered = mockProperties.filter((property) => {
+    const filtered = apiListings.filter((property) => {
       if (listingMode === 'buy' && property.type === 'rent') return false
       if (listingMode === 'rent' && property.type === 'sale') return false
       if (q && !property.address.toLowerCase().includes(q) &&
                !property.city.toLowerCase().includes(q) &&
                !property.state.toLowerCase().includes(q) &&
                !property.zip.includes(q) &&
-               !property.propertyType.toLowerCase().includes(q)) return false
+               !(property.propertyType ?? '').toLowerCase().includes(q)) return false
       const priceValue = listingMode === 'buy' ? property.price : property.rent
       if (filters.minPrice && priceValue < parseInt(filters.minPrice)) return false
       if (filters.maxPrice && priceValue > parseInt(filters.maxPrice)) return false
@@ -86,7 +105,7 @@ export default function ListingsView() {
       sorted.sort((a, b) => b.sqft - a.sqft)
     }
     return sorted
-  }, [filters, listingMode, sortBy, searchQuery])
+  }, [filters, listingMode, sortBy, searchQuery, apiListings])
 
   return (
     <div className="size-full flex flex-col">
@@ -116,10 +135,13 @@ export default function ListingsView() {
         </div>
 
         <div className={`w-full lg:w-1/2 h-full overflow-y-auto bg-gradient-to-br from-gray-50 to-blue-50/30 p-3 lg:p-6 ${mobileView === 'map' ? 'hidden lg:block' : ''}`}>
+
           <div className="mb-4 lg:mb-5 flex items-center justify-between gap-3">
-            <div className="inline-block bg-white px-3 lg:px-4 py-1.5 lg:py-2 rounded-full shadow-md border border-gray-100">
-              <span className="font-semibold text-gray-700 text-sm lg:text-base">{filteredProperties.length}</span>
-              <span className="text-gray-500 ml-1 text-xs lg:text-base">properties found</span>
+            <div className="inline-flex items-center gap-2 bg-white px-3 lg:px-4 py-1.5 lg:py-2 rounded-full shadow-md border border-gray-100">
+              {loadingListings
+                ? <><Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" /><span className="text-gray-500 text-xs lg:text-sm">Loading…</span></>
+                : <><span className="font-semibold text-gray-700 text-sm lg:text-base">{filteredProperties.length}</span><span className="text-gray-500 ml-1 text-xs lg:text-base">properties found</span></>
+              }
             </div>
 
             <div className="relative">
@@ -139,19 +161,29 @@ export default function ListingsView() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
-            {filteredProperties.map((property) => (
-              <PropertyCard
-                key={property.id}
-                property={property}
-                onClick={() => setSelectedProperty(property)}
-                isHovered={hoveredPropertyId === property.id}
-                onMouseEnter={() => setHoveredPropertyId(property.id)}
-                onMouseLeave={() => setHoveredPropertyId(null)}
-                listingMode={listingMode}
-              />
-            ))}
-          </div>
+          {!loadingListings && filteredProperties.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                <Home className="w-8 h-8 text-gray-400" />
+              </div>
+              <p className="text-gray-600 font-semibold text-lg">No listings found</p>
+              <p className="text-gray-400 text-sm mt-1">Try adjusting your filters or check back later</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
+              {filteredProperties.map((property) => (
+                <PropertyCard
+                  key={property.id}
+                  property={property}
+                  onClick={() => setSelectedProperty(property)}
+                  isHovered={hoveredPropertyId === property.id}
+                  onMouseEnter={() => setHoveredPropertyId(property.id)}
+                  onMouseLeave={() => setHoveredPropertyId(null)}
+                  listingMode={listingMode}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
