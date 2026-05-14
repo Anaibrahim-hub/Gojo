@@ -195,7 +195,7 @@ export default function ListingsView() {
 
       <button
         onClick={() => setMobileView(mobileView === 'map' ? 'list' : 'map')}
-        className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-full shadow-2xl hover:shadow-blue-500/50 transition-all flex items-center gap-2 font-semibold"
+        className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-full shadow-2xl hover:shadow-blue-500/50 transition-all flex items-center gap-2 font-semibold"
       >
         {mobileView === 'map' ? (
           <>
