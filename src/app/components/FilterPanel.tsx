@@ -79,6 +79,22 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
   const [isLoading, setIsLoading] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const { user, photoURL, signOut } = useAuth();
+  const [isAgent, setIsAgent] = useState(false);
+  const [isAgentChecked, setIsAgentChecked] = useState(false);
+
+  const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? '';
+
+  useEffect(() => {
+    if (!user || !WORKER_URL) { setIsAgent(false); setIsAgentChecked(false); return }
+    user.getIdToken().then(token =>
+      fetch(`${WORKER_URL}/listing`, { headers: { Authorization: `Bearer ${token}` } })
+    ).then(async res => {
+      if (!res.ok) { setIsAgentChecked(true); return }
+      const data = await res.json() as { listings: unknown[]; isAgent: boolean }
+      setIsAgent(data.isAgent ?? false)
+      setIsAgentChecked(true)
+    }).catch(() => setIsAgentChecked(true))
+  }, [user]);
 
   const buyPriceOptions = {
     min: [
@@ -180,7 +196,7 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
   };
 
   return (
-    <div className="bg-white shadow-lg border-b border-gray-100">
+    <div className="sticky top-0 z-50 lg:static bg-white shadow-lg border-b border-gray-100">
       <div className="p-3 lg:p-5 space-y-3">
         <div className="flex items-center gap-2 lg:gap-4 flex-wrap">
           {user && (
@@ -304,12 +320,16 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
                       <button onClick={() => { router.push('/list-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
                         <Key className="w-4 h-4 text-gray-400" />My Listing
                       </button>
-                      <button onClick={() => { router.push('/sell-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
-                        <Tag className="w-4 h-4 text-gray-400" />Sell My Home
-                      </button>
-                      <button onClick={() => { router.push('/become-an-agent'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
-                        <UserPlus className="w-4 h-4 text-gray-400" />Become an Agent
-                      </button>
+                      {isAgentChecked && !isAgent && (
+                        <button onClick={() => { router.push('/sell-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                          <Tag className="w-4 h-4 text-gray-400" />Sell My Home
+                        </button>
+                      )}
+                      {isAgentChecked && !isAgent && (
+                        <button onClick={() => { router.push('/become-an-agent'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                          <UserPlus className="w-4 h-4 text-gray-400" />Become an Agent
+                        </button>
+                      )}
                       <div className="border-t border-gray-100 my-1" />
                       <button onClick={() => { router.push('/contact'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
                         <Mail className="w-4 h-4 text-gray-400" />Contact Us
@@ -481,8 +501,12 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
               <button onClick={() => { router.push('/settings'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Settings className="w-5 h-5" />Settings</button>
               <div className="border-t border-gray-200 my-2"></div>
               <button onClick={() => { router.push('/list-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Key className="w-5 h-5" />My Listing</button>
-              <button onClick={() => { router.push('/sell-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Tag className="w-5 h-5" />Sell My Home</button>
-              <button onClick={() => { router.push('/become-an-agent'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><UserPlus className="w-5 h-5" />Become an Agent</button>
+              {isAgentChecked && !isAgent && (
+                <button onClick={() => { router.push('/sell-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Tag className="w-5 h-5" />Sell My Home</button>
+              )}
+              {isAgentChecked && !isAgent && (
+                <button onClick={() => { router.push('/become-an-agent'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><UserPlus className="w-5 h-5" />Become an Agent</button>
+              )}
               <div className="border-t border-gray-200 my-2"></div>
               <button onClick={() => { router.push('/contact'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"><Mail className="w-5 h-5" />Contact Us</button>
               {user && (
