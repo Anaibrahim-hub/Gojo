@@ -390,10 +390,10 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       <section className="max-w-7xl mx-auto px-4 lg:px-6 py-6 lg:py-12">
         <div className="text-center mb-6 lg:mb-8">
           <h1 className="text-3xl lg:text-5xl font-bold text-gray-900 mb-3 lg:mb-4">
-            {'Find Your Dream Home'}
+            Find Your Dream Home in Ethiopia
           </h1>
-          <p className="text-base lg:text-lg text-gray-600 px-2">
-            {'Discover the perfect property in your ideal neighborhood'}
+          <p className="text-base lg:text-lg text-gray-600 px-2 max-w-2xl mx-auto">
+            Yevilla is Ethiopia&apos;s real estate marketplace — search homes for sale and rent in Addis Ababa and across the country, connect with local agents, and list your property in minutes.
           </p>
         </div>
 
