@@ -8,6 +8,9 @@ export interface Env {
   R2_PUBLIC_URL: string      // e.g. https://pub-xxx.r2.dev  (no trailing slash)
   ALLOWED_ORIGIN: string     // e.g. https://yevilla.com
   ADMIN_SECRET: string       // set via: wrangler secret put ADMIN_SECRET
+  FIREBASE_SERVICE_ACCOUNT_JSON: string  // set via: wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
+  BREVO_API_KEY: string      // set via: wrangler secret put BREVO_API_KEY
+  STAFF_EMAIL: string        // set via: wrangler secret put STAFF_EMAIL (default: anaibrahim628@gmail.com)
 }
 
 // ── Allowlists ────────────────────────────────────────────────────────────────
@@ -40,6 +43,7 @@ const RATE_LIMITS = {
   write:     { max: 30, windowSec: 60 },   // agents post multiple listings
   read_auth: { max: 30, windowSec: 60 },
   read_pub:  { max: 60, windowSec: 60 },
+  email:     { max: 5,  windowSec: 60 },   // form submissions
 } as const
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024
@@ -145,6 +149,9 @@ export default {
       if (pathname === '/contact' && request.method === 'GET') {
         return await handleGetContact(request, env, origin)
       }
+      if (pathname === '/submit-form' && request.method === 'POST') {
+        return await handleSubmitForm(request, env, origin)
+      }
       if (pathname === '/admin/listing/approve' && request.method === 'PATCH') {
         return await handleApproveListing(request, env, origin)
       }
@@ -159,8 +166,19 @@ export default {
       if (pathname === '/admin/users' && request.method === 'GET') {
         return await handleAdminGetUsers(request, env, origin)
       }
+      if (pathname.startsWith('/admin/users/') && pathname.endsWith('/disable') && request.method === 'PATCH') {
+        return await handleAdminDisableUser(request, env, origin, pathname)
+      }
       if (pathname === '/admin/stats' && request.method === 'GET') {
         return await handleAdminGetStats(request, env, origin)
+      }
+      if (pathname === '/admin/staff') {
+        if (request.method === 'GET')    return await handleAdminGetStaff(request, env, origin)
+        if (request.method === 'POST')   return await handleAdminAddStaff(request, env, origin)
+        if (request.method === 'DELETE') return await handleAdminDeleteStaff(request, env, origin)
+      }
+      if (pathname === '/admin/staff/check' && request.method === 'POST') {
+        return await handleAdminCheckStaff(request, env, origin)
       }
     } catch (err) {
       console.error(err)
@@ -186,11 +204,13 @@ async function handleGetAllListings(request: Request, env: Env, origin: string):
     return jsonErr(429, 'Too many requests — please slow down', origin, env)
   }
 
-  const { results } = await env.DB.prepare(
-    'SELECT * FROM listings WHERE status = ?'
-  ).bind('published').all<ListingRow>()
+  const [{ results }, agentsResult] = await Promise.all([
+    env.DB.prepare('SELECT * FROM listings WHERE status = ?').bind('published').all<ListingRow>(),
+    env.DB.prepare('SELECT uid FROM agents').all<{ uid: string }>(),
+  ])
+  const agentUids = new Set(agentsResult.results.map(r => r.uid))
 
-  return json(results.map(r => rowToListing(r, false)), 200, origin, env)
+  return json(results.map(r => ({ ...rowToListing(r, true), isAgent: agentUids.has(r.owner_id) })), 200, origin, env)
 }
 
 // ── Listing: GET own (authenticated) ─────────────────────────────────────────
@@ -738,49 +758,129 @@ async function handleAdminDeleteListing(request: Request, env: Env, origin: stri
   return json({ deleted: body.id }, 200, origin, env)
 }
 
+// ── Firebase Auth helpers ─────────────────────────────────────────────────────
+
+interface FirebaseAuthUser {
+  localId: string
+  email?: string
+  displayName?: string
+  photoUrl?: string
+  createdAt?: string  // epoch ms as a string
+  disabled?: boolean
+}
+
+interface AdminUserBody {
+  disabled: unknown
+}
+
+async function getGoogleAccessToken(serviceAccountJson: string): Promise<string> {
+  const key = JSON.parse(serviceAccountJson) as { client_email: string; private_key: string }
+  const now = Math.floor(Date.now() / 1000)
+
+  const encode = (obj: unknown) =>
+    btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+
+  const signingInput = `${encode({ alg: 'RS256', typ: 'JWT' })}.${encode({
+    iss: key.client_email,
+    scope: 'https://www.googleapis.com/auth/cloud-platform',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now,
+  })}`
+
+  const pem = key.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\n/g, '')
+  const der = Uint8Array.from(atob(pem), c => c.charCodeAt(0))
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']
+  )
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, new TextEncoder().encode(signingInput))
+  const encodedSig = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: `${signingInput}.${encodedSig}`,
+    }),
+  })
+  const { access_token } = await tokenRes.json() as { access_token: string }
+  return access_token
+}
+
+async function listAllFirebaseUsers(projectId: string, accessToken: string): Promise<FirebaseAuthUser[]> {
+  const users: FirebaseAuthUser[] = []
+  let nextPageToken: string | undefined
+  do {
+    const url = new URL(`https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:batchGet`)
+    url.searchParams.set('maxResults', '1000')
+    if (nextPageToken) url.searchParams.set('nextPageToken', nextPageToken)
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` } })
+    const data = await res.json() as { users?: FirebaseAuthUser[]; nextPageToken?: string }
+    if (data.users) users.push(...data.users)
+    nextPageToken = data.nextPageToken
+  } while (nextPageToken)
+  return users
+}
+
 // ── Admin: GET users ──────────────────────────────────────────────────────────
 
 async function handleAdminGetUsers(request: Request, env: Env, origin: string): Promise<Response> {
   const secret = request.headers.get('X-Admin-Secret')
   if (!secret || secret !== env.ADMIN_SECRET) return jsonErr(401, 'Unauthorized', origin, env)
 
-  const [ownersResult, agentsResult] = await Promise.all([
-    env.DB.prepare(`
-      SELECT owner_id, owner_email, owner_display_name, owner_photo_url,
-             COUNT(*) as listing_count, MIN(created_at) as joined_at
-      FROM listings
-      GROUP BY owner_id
-    `).all<{
-      owner_id: string
-      owner_email: string | null
-      owner_display_name: string | null
-      owner_photo_url: string | null
-      listing_count: number
-      joined_at: number
-    }>(),
+  const accessToken = await getGoogleAccessToken(env.FIREBASE_SERVICE_ACCOUNT_JSON)
+
+  const [firebaseUsers, agentsResult, listingCountsResult] = await Promise.all([
+    listAllFirebaseUsers(env.FIREBASE_PROJECT_ID, accessToken),
     env.DB.prepare('SELECT uid, created_at FROM agents').all<{ uid: string; created_at: number }>(),
+    env.DB.prepare('SELECT owner_id, COUNT(*) as count FROM listings GROUP BY owner_id').all<{ owner_id: string; count: number }>(),
   ])
 
   const agentMap = new Map(agentsResult.results.map(r => [r.uid, r.created_at]))
+  const listingCountMap = new Map(listingCountsResult.results.map(r => [r.owner_id, r.count]))
 
-  const users = ownersResult.results.map(r => ({
-    id: r.owner_id,
-    name: r.owner_display_name ?? 'Unknown',
-    email: r.owner_email ?? '',
-    photoURL: r.owner_photo_url ?? null,
-    isAgent: agentMap.has(r.owner_id),
-    listingCount: r.listing_count,
-    joinedAt: r.joined_at,
+  const users = firebaseUsers.map(u => ({
+    id: u.localId,
+    name: u.displayName ?? '',
+    email: u.email ?? '',
+    photoURL: u.photoUrl ?? null,
+    isAgent: agentMap.has(u.localId),
+    listingCount: listingCountMap.get(u.localId) ?? 0,
+    joinedAt: u.createdAt ? parseInt(u.createdAt, 10) : Date.now(),
+    disabled: u.disabled ?? false,
   }))
 
-  // Include agents who have no listings yet
-  for (const [uid, createdAt] of agentMap) {
-    if (!users.find(u => u.id === uid)) {
-      users.push({ id: uid, name: 'Agent', email: '', photoURL: null, isAgent: true, listingCount: 0, joinedAt: createdAt })
-    }
-  }
-
   return json({ users, agentUids: [...agentMap.keys()] }, 200, origin, env)
+}
+
+// ── Admin: disable / reactivate a Firebase Auth user ─────────────────────────
+
+async function handleAdminDisableUser(request: Request, env: Env, origin: string, pathname: string): Promise<Response> {
+  const secret = request.headers.get('X-Admin-Secret')
+  if (!secret || secret !== env.ADMIN_SECRET) return jsonErr(401, 'Unauthorized', origin, env)
+
+  const uid = pathname.split('/')[3]
+  if (!uid || uid.length > 128) return jsonErr(400, 'Invalid uid', origin, env)
+
+  let body: AdminUserBody
+  try { body = await request.json() as AdminUserBody }
+  catch { return jsonErr(400, 'Invalid JSON', origin, env) }
+
+  if (typeof body.disabled !== 'boolean') return jsonErr(400, 'disabled must be a boolean', origin, env)
+
+  const accessToken = await getGoogleAccessToken(env.FIREBASE_SERVICE_ACCOUNT_JSON)
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/accounts:update`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ localId: uid, disableUser: body.disabled }),
+    }
+  )
+
+  if (!res.ok) return jsonErr(500, 'Failed to update user', origin, env)
+  return json({ uid, disabled: body.disabled }, 200, origin, env)
 }
 
 // ── Admin: GET stats ──────────────────────────────────────────────────────────
@@ -902,6 +1002,100 @@ async function verifyFirebaseToken(token: string, projectId: string): Promise<st
   } catch {
     return null
   }
+}
+
+// ── Form submission → Brevo email ────────────────────────────────────────────
+
+const FORM_SUBJECTS: Record<string, string> = {
+  'talk-to-agent': 'New Agent Inquiry — Yevilla',
+  'contact':       'New Contact Message — Yevilla',
+  'sell-home':     'New Sell My Home Request — Yevilla',
+  'become-agent':  'New Agent Application — Yevilla',
+}
+
+async function handleSubmitForm(request: Request, env: Env, origin: string): Promise<Response> {
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
+  if (!await rateLimit(env, `email:${ip}`, RATE_LIMITS.email)) {
+    return jsonErr(429, 'Too many submissions — please slow down', origin, env)
+  }
+
+  let body: { type?: unknown; fields?: unknown }
+  try { body = await request.json() } catch { return jsonErr(400, 'Invalid JSON', origin, env) }
+
+  const type = typeof body.type === 'string' ? body.type : ''
+  if (!FORM_SUBJECTS[type]) return jsonErr(400, 'Invalid form type', origin, env)
+
+  const rawFields = body.fields
+  if (!rawFields || typeof rawFields !== 'object' || Array.isArray(rawFields)) {
+    return jsonErr(400, 'Missing fields', origin, env)
+  }
+
+  const fields: Record<string, string> = {}
+  for (const [k, v] of Object.entries(rawFields as Record<string, unknown>)) {
+    const key = sanitizeText(String(k), 60)
+    const val = sanitizeText(String(v ?? ''), 2000)
+    if (key && val) fields[key] = val
+  }
+
+  if (Object.keys(fields).length === 0) return jsonErr(400, 'No fields provided', origin, env)
+
+  const to = env.STAFF_EMAIL || 'anaibrahim628@gmail.com'
+  const subject = FORM_SUBJECTS[type]
+  const html = buildFormEmailHtml(type, fields)
+
+  try {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': env.BREVO_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sender: { name: 'Yevilla', email: 'noreply@yevilla.com' },
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+      }),
+    })
+    if (!res.ok) {
+      console.error('Brevo error', res.status, await res.text())
+      return jsonErr(502, 'Failed to send — please try again', origin, env)
+    }
+  } catch (err) {
+    console.error('Brevo fetch error', err)
+    return jsonErr(502, 'Failed to send — please try again', origin, env)
+  }
+
+  return json({ ok: true }, 200, origin, env)
+}
+
+function buildFormEmailHtml(type: string, fields: Record<string, string>): string {
+  const title = ({
+    'talk-to-agent': 'Agent Inquiry',
+    'contact':       'Contact Message',
+    'sell-home':     'Sell My Home Request',
+    'become-agent':  'Agent Application',
+  } as Record<string, string>)[type] ?? 'Form Submission'
+
+  const rows = Object.entries(fields).map(([k, v]) => `
+    <tr>
+      <td style="padding:8px 14px;background:#f3f4f6;font-weight:600;color:#374151;white-space:nowrap;vertical-align:top;border-bottom:1px solid #e5e7eb;font-size:13px">${escapeHtml(k)}</td>
+      <td style="padding:8px 14px;color:#1f2937;vertical-align:top;border-bottom:1px solid #e5e7eb;font-size:13px">${escapeHtml(v).replace(/\n/g, '<br>')}</td>
+    </tr>`).join('')
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="font-family:sans-serif;background:#f9fafb;padding:24px;margin:0">
+  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+    <div style="background:linear-gradient(135deg,#2563eb,#4f46e5);padding:24px 32px">
+      <h1 style="margin:0;color:#fff;font-size:20px;font-weight:700">Yevilla — ${escapeHtml(title)}</h1>
+    </div>
+    <div style="padding:28px 32px">
+      <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">${rows}</table>
+      <p style="margin:20px 0 0;font-size:12px;color:#9ca3af">Submitted via yevilla.com</p>
+    </div>
+  </div>
+</body></html>`
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
 // ── Rate limiter (fixed window via KV) ────────────────────────────────────────
@@ -1079,9 +1273,86 @@ function rowToListing(row: ListingRow, includeEmail: boolean) {
   }
 }
 
+// ── Admin: Staff ──────────────────────────────────────────────────────────────
+
+interface StaffRow {
+  id: string
+  name: string
+  email: string
+  created_at: number
+}
+
+async function handleAdminGetStaff(request: Request, env: Env, origin: string): Promise<Response> {
+  const secret = request.headers.get('X-Admin-Secret')
+  if (!secret || secret !== env.ADMIN_SECRET) return jsonErr(401, 'Unauthorized', origin, env)
+
+  const result = await env.DB.prepare('SELECT * FROM staff ORDER BY created_at DESC').all<StaffRow>()
+  return json(result.results.map(r => ({
+    id: r.id, name: r.name, email: r.email, createdAt: r.created_at,
+  })), 200, origin, env)
+}
+
+async function handleAdminAddStaff(request: Request, env: Env, origin: string): Promise<Response> {
+  const secret = request.headers.get('X-Admin-Secret')
+  if (!secret || secret !== env.ADMIN_SECRET) return jsonErr(401, 'Unauthorized', origin, env)
+
+  let body: { name?: unknown; email?: unknown }
+  try { body = await request.json() as { name?: unknown; email?: unknown } }
+  catch { return jsonErr(400, 'Invalid JSON', origin, env) }
+
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+  if (!name || !email) return jsonErr(400, 'name and email are required', origin, env)
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return jsonErr(400, 'Invalid email', origin, env)
+
+  const id = crypto.randomUUID()
+  const now = Date.now()
+  try {
+    await env.DB.prepare('INSERT INTO staff (id, name, email, created_at) VALUES (?, ?, ?, ?)')
+      .bind(id, name, email, now).run()
+  } catch {
+    return jsonErr(409, 'Email already exists', origin, env)
+  }
+
+  return json({ id, name, email, createdAt: now }, 201, origin, env)
+}
+
+async function handleAdminCheckStaff(request: Request, env: Env, origin: string): Promise<Response> {
+  const secret = request.headers.get('X-Admin-Secret')
+  if (!secret || secret !== env.ADMIN_SECRET) return jsonErr(401, 'Unauthorized', origin, env)
+
+  let body: { email?: unknown }
+  try { body = await request.json() as { email?: unknown } }
+  catch { return jsonErr(400, 'Invalid JSON', origin, env) }
+
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+  if (!email) return jsonErr(400, 'email required', origin, env)
+
+  const row = await env.DB.prepare('SELECT id, name, email, created_at FROM staff WHERE LOWER(email) = ?')
+    .bind(email).first<StaffRow>()
+  if (!row) return jsonErr(404, 'Not a staff member', origin, env)
+  return json({ id: row.id, name: row.name, email: row.email, createdAt: row.created_at }, 200, origin, env)
+}
+
+async function handleAdminDeleteStaff(request: Request, env: Env, origin: string): Promise<Response> {
+  const secret = request.headers.get('X-Admin-Secret')
+  if (!secret || secret !== env.ADMIN_SECRET) return jsonErr(401, 'Unauthorized', origin, env)
+
+  let body: { id?: unknown }
+  try { body = await request.json() as { id?: unknown } }
+  catch { return jsonErr(400, 'Invalid JSON', origin, env) }
+
+  if (typeof body.id !== 'string' || !body.id) return jsonErr(400, 'id required', origin, env)
+
+  const result = await env.DB.prepare('DELETE FROM staff WHERE id = ?').bind(body.id).run()
+  if (result.meta.changes === 0) return jsonErr(404, 'Staff member not found', origin, env)
+  return json({ deleted: body.id }, 200, origin, env)
+}
+
 function corsHeaders(origin: string, env: Env): Headers {
   const isLocalhost = /^http:\/\/localhost(:\d+)?$/.test(origin)
-  const allowed = origin === env.ALLOWED_ORIGIN || isLocalhost
+  const wwwVariant = env.ALLOWED_ORIGIN.replace(/^https:\/\//, 'https://www.')
+  const allowed = origin === env.ALLOWED_ORIGIN || origin === wwwVariant || isLocalhost
   const h = new Headers()
   h.set('Access-Control-Allow-Origin', allowed ? origin : env.ALLOWED_ORIGIN)
   h.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
