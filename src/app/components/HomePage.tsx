@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, User, TrendingUp, Home, Key, MessageCircle, ChevronRight, X, Menu, Heart, Settings, Tag, UserPlus, LogOut, MapPin, Loader2, Mail } from 'lucide-react';
+import { Search, User, TrendingUp, Home, Key, MessageCircle, ChevronRight, X, Menu, Heart, Settings, Tag, UserPlus, LogOut, MapPin, Loader2, Mail, Share2, Check } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useFavorites } from '@/lib/favorites-context';
@@ -19,8 +19,8 @@ function uidToNumId(uid: string): number {
 function apiListingToProperty(d: Record<string, unknown>): Property {
   const photos = (d.photos as { url: string }[] | undefined) ?? []
   return {
-    id: uidToNumId(d.ownerId as string),
-    firestoreId: d.ownerId as string,
+    id: uidToNumId(d.id as string),
+    firestoreId: d.id as string,
     price: 0,
     rent: (d.monthlyRent as number) ?? 0,
     address: (d.landmark as string) ||
@@ -113,6 +113,40 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
   const [isLoading, setIsLoading] = useState(false);
   const [apiListings, setApiListings] = useState<Property[]>([]);
   const [loadingListings, setLoadingListings] = useState(true);
+  const [myListing, setMyListing] = useState<Property | null>(null);
+  const [isAgent, setIsAgent] = useState(false);
+  const [isAgentChecked, setIsAgentChecked] = useState(false);
+  const [sharedId, setSharedId] = useState<number | null>(null);
+  const [agentLocation, setAgentLocation] = useState('');
+  const [agentEmail, setAgentEmail] = useState('');
+  const [agentPhone, setAgentPhone] = useState('');
+  const [agentMessage, setAgentMessage] = useState('');
+  const [agentSubmitting, setAgentSubmitting] = useState(false);
+  const [agentSubmitted, setAgentSubmitted] = useState(false);
+  const [agentError, setAgentError] = useState('');
+
+  const handleShare = async (e: React.MouseEvent, property: Property) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}/listings?q=${encodeURIComponent(property.address)}`;
+    const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+    if (isMobile && navigator.share) {
+      try { await navigator.share({ title: property.address, text: `${property.address}, ${property.city}`, url }); } catch { /* cancelled */ }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = url;
+      el.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setSharedId(property.id);
+    setTimeout(() => setSharedId(null), 2000);
+  };
 
   const recommendedRef = useRef<HTMLDivElement>(null);
   const forSaleRef = useRef<HTMLDivElement>(null);
@@ -164,6 +198,48 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       .finally(() => setLoadingListings(false))
   }, [])
 
+  useEffect(() => {
+    if (!user || !WORKER_URL) { setMyListing(null); setIsAgent(false); setIsAgentChecked(false); return }
+    user.getIdToken().then(token =>
+      fetch(`${WORKER_URL}/listing`, { headers: { Authorization: `Bearer ${token}` } })
+    ).then(async res => {
+      if (!res.ok) { setMyListing(null); setIsAgentChecked(true); return }
+      const data = await res.json() as { listings: Record<string, unknown>[]; isAgent: boolean }
+      setIsAgent(data.isAgent ?? false)
+      setIsAgentChecked(true)
+      const first = data.listings?.[0]
+      setMyListing(first ? apiListingToProperty(first) : null)
+    }).catch(() => { setMyListing(null); setIsAgentChecked(true) })
+  }, [user])
+
+  async function handleAgentFormSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!agentEmail.trim()) { setAgentError('Please enter your email address.'); return; }
+    setAgentSubmitting(true);
+    setAgentError('');
+    try {
+      const res = await fetch(`${WORKER_URL}/submit-form`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'talk-to-agent',
+          fields: {
+            ...(agentLocation && { 'Searching In': agentLocation }),
+            'Email': agentEmail,
+            ...(agentPhone && { 'Phone': agentPhone }),
+            ...(agentMessage && { 'Message': agentMessage }),
+          },
+        }),
+      });
+      if (!res.ok) throw new Error();
+      setAgentSubmitted(true);
+    } catch {
+      setAgentError('Something went wrong. Please try again.');
+    } finally {
+      setAgentSubmitting(false);
+    }
+  }
+
   const openSearchModal = () => {
     setInputValue('');
     setSuggestions([]);
@@ -191,25 +267,24 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
 
   const footerLinks = {
     findUs: [
-      { title: 'Contact Us', href: '#' },
-      { title: 'Office Locations', href: '#' },
-      { title: 'Community Events', href: '#' },
+      { title: 'Contact Us', href: '/contact' },
+      { title: 'Office Locations', href: '/contact' },
+      { title: 'Community Events', href: '/contact' },
     ],
     joinUs: [
-      { title: 'Become an Agent', href: '#' },
-      { title: 'Careers', href: '#' },
-      { title: 'Culture & Values', href: '#' },
+      { title: 'Become an Agent', href: '/become-an-agent' },
+      { title: 'Careers', href: '/contact' },
+      { title: 'Culture & Values', href: '/contact' },
     ],
     more: [
-      { title: 'List Your Property', href: '#' },
-      { title: 'Market Reports', href: '#' },
-      { title: 'Home Valuation Tool', href: '#' },
-      { title: 'Mortgage Calculator', href: '#' },
+      { title: 'List Your Property', href: '/list-my-home' },
+      { title: 'Market Reports', href: '/contact' },
+      { title: 'Home Valuation Tool', href: '/contact' },
+      { title: 'Mortgage Calculator', href: '/contact' },
     ],
     legal: [
-      { title: 'Privacy Policy', href: '#' },
-      { title: 'Terms of Use', href: '#' },
-      { title: 'Terms and Policy', href: '#' },
+      { title: 'Privacy Policy', href: '/privacy' },
+      { title: 'Terms of Use', href: '/terms' },
     ],
   };
 
@@ -266,12 +341,16 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                         <button onClick={() => { router.push('/list-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
                           <Key className="w-4 h-4 text-gray-400" />My Listing
                         </button>
-                        <button onClick={() => { router.push('/sell-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
-                          <Tag className="w-4 h-4 text-gray-400" />Sell My Home
-                        </button>
-                        <button onClick={() => { router.push('/become-an-agent'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
-                          <UserPlus className="w-4 h-4 text-gray-400" />Become an Agent
-                        </button>
+                        {isAgentChecked && !isAgent && (
+                          <button onClick={() => { router.push('/sell-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                            <Tag className="w-4 h-4 text-gray-400" />Sell My Home
+                          </button>
+                        )}
+                        {isAgentChecked && !isAgent && (
+                          <button onClick={() => { router.push('/become-an-agent'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                            <UserPlus className="w-4 h-4 text-gray-400" />Become an Agent
+                          </button>
+                        )}
                         <div className="border-t border-gray-100 my-1" />
                         <button onClick={() => { router.push('/contact'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
                           <Mail className="w-4 h-4 text-gray-400" />Contact Us
@@ -330,6 +409,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       </section>
 
       {/* Recommendations */}
+      {(!loadingListings && recommendations.length === 0) ? null : (
       <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
         <div className="flex items-center justify-between mb-3 lg:mb-4">
           <h2 className="text-xl lg:text-3xl font-bold text-gray-900">{'Recommended for You'}</h2>
@@ -340,11 +420,6 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
         {loadingListings ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-          </div>
-        ) : recommendations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Home className="w-10 h-10 text-gray-300 mb-3" />
-            <p className="text-gray-500 text-sm">No listings yet — check back soon</p>
           </div>
         ) : (
           <>
@@ -375,6 +450,12 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                       className="absolute top-2 lg:top-3 left-2 lg:left-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
                     >
                       <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                    </button>
+                    <button
+                      onClick={(e) => handleShare(e, property)}
+                      className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
+                    >
+                      {sharedId === property.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-700" />}
                     </button>
                     <div className="absolute bottom-2 lg:bottom-3 left-2 lg:left-3 right-2 lg:right-3">
                       <div className="text-white text-xl lg:text-2xl font-bold">
@@ -413,26 +494,39 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
           </>
         )}
       </section>
+      )}
 
-      {/* Saved Listings — signed-in users with at least one favorite */}
-      {user && apiListings.filter((p) => isFavorite(p.id)).length > 0 && (() => {
-        const saved = apiListings.filter((p) => isFavorite(p.id));
-        return (
-          <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
-            <div className="flex items-center justify-between mb-3 lg:mb-4">
-              <div className="flex items-center gap-2">
-                <Heart className="w-5 h-5 lg:w-6 lg:h-6 text-red-500 fill-red-500" />
-                <h2 className="text-xl lg:text-3xl font-bold text-gray-900">Saved Listings</h2>
-              </div>
-              <button onClick={() => router.push('/favorites')} className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base">
-                View All <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
-              </button>
-            </div>
-            <div className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide">
-              {saved.map((property) => (
+      {/* For Rent */}
+      {(!loadingListings && forRent.length === 0) ? null : (
+      <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
+        <div className="flex items-center justify-between mb-3 lg:mb-4">
+          <div className="flex items-center gap-2">
+            <Key className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600" />
+            <h2 className="text-xl lg:text-3xl font-bold text-gray-900">{'For Rent'}</h2>
+          </div>
+          <button onClick={() => onNavigateToMap('rent')} className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base">
+            {'View All'} <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
+          </button>
+        </div>
+        {loadingListings ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          </div>
+        ) : (
+          <>
+            <div
+              ref={forRentRef}
+              className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide lg:overflow-x-auto"
+              onScroll={(e) => {
+                const target = e.target as HTMLDivElement;
+                const index = Math.round(target.scrollLeft / (288 + 12));
+                setForRentIndex(index);
+              }}
+            >
+              {forRent.map((property) => (
                 <div
                   key={property.id}
-                  className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl transition-all snap-start cursor-pointer group"
+                  className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all snap-start cursor-pointer group"
                   onClick={() => onPropertyClick(property)}
                 >
                   <div className="relative h-44 lg:h-48 overflow-hidden">
@@ -442,35 +536,55 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <button
-                      onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-                      className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
-                    >
-                      <Heart className="w-4 h-4 fill-red-500 text-red-500" />
-                    </button>
+                    <div className="absolute top-2 lg:top-3 right-2 lg:right-3 flex flex-col gap-2 z-10">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
+                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
+                      >
+                        <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                      </button>
+                      <button
+                        onClick={(e) => handleShare(e, property)}
+                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
+                      >
+                        {sharedId === property.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-700" />}
+                      </button>
+                    </div>
                   </div>
                   <div className="p-4 lg:p-5">
                     <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
-                      {property.type === 'rent'
-                        ? `Br ${property.rent.toLocaleString()}/mo`
-                        : formatPrice(property.price)}
+                      Br {property.rent.toLocaleString()}/mo
                     </div>
                     <div className="flex items-center gap-2 lg:gap-3 text-gray-600 mb-2 text-xs lg:text-sm">
-                      <span>{property.beds} bd</span>
+                      <span>{property.beds} {'bd'}</span>
                       <span>•</span>
-                      <span>{property.baths} ba</span>
-                      <span>•</span>
-                      <span>{property.sqft.toLocaleString()} sqft</span>
+                      <span>{property.baths} {'ba'}</span>
+                      {property.sqft > 0 && <><span>•</span><span>{property.sqft.toLocaleString()} sqft</span></>}
                     </div>
-                    <div className="text-gray-700 font-medium text-sm lg:text-base">{property.address}</div>
-                    <div className="text-gray-500 text-xs lg:text-sm">{property.city}, {property.state}</div>
+                    <div className="text-gray-700 font-medium text-sm lg:text-base">{property.city}{property.state ? `, ${property.state}` : ''}</div>
                   </div>
                 </div>
               ))}
             </div>
-          </section>
-        );
-      })()}
+            <div className="flex justify-center gap-2 mt-2 lg:hidden">
+              {forRent.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => {
+                    if (forRentRef.current) {
+                      forRentRef.current.scrollTo({ left: index * (288 + 12), behavior: 'smooth' });
+                    }
+                  }}
+                  className={`w-2 h-2 rounded-full transition-all ${
+                    index === forRentIndex ? 'bg-blue-600 w-6' : 'bg-gray-300'
+                  }`}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+      )}
 
       {/* For Sale */}
       {(!loadingListings && forSale.length === 0) ? null : (
@@ -512,12 +626,20 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <button
-                      onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-                      className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
-                    >
-                      <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
-                    </button>
+                    <div className="absolute top-2 lg:top-3 right-2 lg:right-3 flex flex-col gap-2 z-10">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
+                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
+                      >
+                        <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                      </button>
+                      <button
+                        onClick={(e) => handleShare(e, property)}
+                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
+                      >
+                        {sharedId === property.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-700" />}
+                      </button>
+                    </div>
                   </div>
                   <div className="p-4 lg:p-5">
                     <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
@@ -555,41 +677,25 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       </section>
       )}
 
-      {/* For Rent */}
-      <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
-        <div className="flex items-center justify-between mb-3 lg:mb-4">
-          <div className="flex items-center gap-2">
-            <Key className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600" />
-            <h2 className="text-xl lg:text-3xl font-bold text-gray-900">{'For Rent'}</h2>
-          </div>
-          <button onClick={() => onNavigateToMap('rent')} className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base">
-            {'View All'} <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
-          </button>
-        </div>
-        {loadingListings ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-          </div>
-        ) : forRent.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Key className="w-10 h-10 text-gray-300 mb-3" />
-            <p className="text-gray-500 text-sm">No rentals listed yet — check back soon</p>
-          </div>
-        ) : (
-          <>
-            <div
-              ref={forRentRef}
-              className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide lg:overflow-x-auto"
-              onScroll={(e) => {
-                const target = e.target as HTMLDivElement;
-                const index = Math.round(target.scrollLeft / (288 + 12));
-                setForRentIndex(index);
-              }}
-            >
-              {forRent.map((property) => (
+      {/* Saved Listings — signed-in users with at least one favorite */}
+      {user && apiListings.filter((p) => isFavorite(p.id)).length > 0 && (() => {
+        const saved = apiListings.filter((p) => isFavorite(p.id));
+        return (
+          <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
+            <div className="flex items-center justify-between mb-3 lg:mb-4">
+              <div className="flex items-center gap-2">
+                <Heart className="w-5 h-5 lg:w-6 lg:h-6 text-red-500 fill-red-500" />
+                <h2 className="text-xl lg:text-3xl font-bold text-gray-900">Saved Listings</h2>
+              </div>
+              <button onClick={() => router.push('/favorites')} className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base">
+                View All <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
+              </button>
+            </div>
+            <div className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide">
+              {saved.map((property) => (
                 <div
                   key={property.id}
-                  className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all snap-start cursor-pointer group"
+                  className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl transition-all snap-start cursor-pointer group"
                   onClick={() => onPropertyClick(property)}
                 >
                   <div className="relative h-44 lg:h-48 overflow-hidden">
@@ -599,46 +705,97 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <button
-                      onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-                      className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
-                    >
-                      <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
-                    </button>
+                    <div className="absolute top-2 lg:top-3 right-2 lg:right-3 flex flex-col gap-2 z-10">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
+                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
+                      >
+                        <Heart className="w-4 h-4 fill-red-500 text-red-500" />
+                      </button>
+                      <button
+                        onClick={(e) => handleShare(e, property)}
+                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
+                      >
+                        {sharedId === property.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-700" />}
+                      </button>
+                    </div>
                   </div>
                   <div className="p-4 lg:p-5">
                     <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
-                      Br {property.rent.toLocaleString()}/mo
+                      {property.type === 'rent' ? `Br ${property.rent.toLocaleString()}/mo` : formatPrice(property.price)}
                     </div>
                     <div className="flex items-center gap-2 lg:gap-3 text-gray-600 mb-2 text-xs lg:text-sm">
-                      <span>{property.beds} {'bd'}</span>
+                      <span>{property.beds} bd</span>
                       <span>•</span>
-                      <span>{property.baths} {'ba'}</span>
-                      {property.sqft > 0 && <><span>•</span><span>{property.sqft.toLocaleString()} sqft</span></>}
+                      <span>{property.baths} ba</span>
+                      <span>•</span>
+                      <span>{property.sqft.toLocaleString()} sqft</span>
                     </div>
-                    <div className="text-gray-700 font-medium text-sm lg:text-base">{property.city}{property.state ? `, ${property.state}` : ''}</div>
+                    <div className="text-gray-700 font-medium text-sm lg:text-base">{property.address}</div>
+                    <div className="text-gray-500 text-xs lg:text-sm">{property.city}, {property.state}</div>
                   </div>
                 </div>
               ))}
             </div>
-            <div className="flex justify-center gap-2 mt-2 lg:hidden">
-              {forRent.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => {
-                    if (forRentRef.current) {
-                      forRentRef.current.scrollTo({ left: index * (288 + 12), behavior: 'smooth' });
-                    }
-                  }}
-                  className={`w-2 h-2 rounded-full transition-all ${
-                    index === forRentIndex ? 'bg-blue-600 w-6' : 'bg-gray-300'
-                  }`}
-                />
-              ))}
+          </section>
+        );
+      })()}
+
+      {/* My Listing — shown only when the signed-in user has a published listing */}
+      {myListing && myListing.status === 'active' && (
+        <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
+          <div className="flex items-center justify-between mb-3 lg:mb-4">
+            <div className="flex items-center gap-2">
+              <Home className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600" />
+              <h2 className="text-xl lg:text-3xl font-bold text-gray-900">My Listing</h2>
             </div>
-          </>
-        )}
-      </section>
+            <button
+              onClick={() => router.push('/list-my-home')}
+              className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base"
+            >
+              Manage <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
+            </button>
+          </div>
+          <div className="flex gap-3 lg:gap-4">
+            <div
+              className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all cursor-pointer group"
+              onClick={() => onPropertyClick(myListing)}
+            >
+              <div className="relative h-44 lg:h-48 overflow-hidden">
+                <img
+                  src={myListing.image}
+                  alt={myListing.address}
+                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                <button
+                  onClick={(e) => handleShare(e, myListing)}
+                  className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
+                >
+                  {sharedId === myListing.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-700" />}
+                </button>
+                <div className="absolute bottom-2 lg:bottom-3 left-2 lg:left-3 right-2 lg:right-3">
+                  <div className="text-white text-xl lg:text-2xl font-bold">
+                    Br {myListing.rent.toLocaleString()}/mo
+                  </div>
+                  <div className="text-white/90 text-xs lg:text-sm">{myListing.city}</div>
+                </div>
+              </div>
+              <div className="p-3 lg:p-4">
+                <div className="flex items-center gap-3 lg:gap-4 text-gray-600 text-xs lg:text-sm mb-2">
+                  {myListing.beds > 0 && <span>{myListing.beds} beds</span>}
+                  {myListing.beds > 0 && myListing.baths > 0 && <span>•</span>}
+                  {myListing.baths > 0 && <span>{myListing.baths} baths</span>}
+                  {myListing.sqft > 0 && <><span>•</span><span>{myListing.sqft.toLocaleString()} m²</span></>}
+                </div>
+                {myListing.address && (
+                  <div className="text-gray-700 font-medium text-sm lg:text-base truncate">{myListing.address}</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Talk to an Agent */}
       <section className="max-w-3xl mx-auto px-4 lg:px-6 py-8 lg:py-16">
@@ -649,64 +806,86 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
           </p>
         </div>
 
-        <form className="space-y-6">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              {'Where are you searching for homes?'}
-            </label>
-            <input
-              type="text"
-              placeholder="City, Neighborhood, or ZIP"
-              className="w-full px-5 py-4 bg-white border-2 border-gray-200 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm hover:border-gray-300"
-            />
+        {agentSubmitted ? (
+          <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+            <svg className="w-14 h-14 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <p className="text-xl font-bold text-gray-800">Request submitted!</p>
+            <p className="text-gray-500">An agent will reach out to you shortly.</p>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        ) : (
+          <form className="space-y-6" onSubmit={handleAgentFormSubmit}>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {'Email Address'}
+                {'Where are you searching for homes?'}
               </label>
               <input
-                type="email"
-                placeholder="email@example.com"
+                type="text"
+                placeholder="City, Neighborhood, or ZIP"
+                value={agentLocation}
+                onChange={e => setAgentLocation(e.target.value)}
                 className="w-full px-5 py-4 bg-white border-2 border-gray-200 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm hover:border-gray-300"
               />
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  {'Email Address *'}
+                </label>
+                <input
+                  type="email"
+                  placeholder="email@example.com"
+                  value={agentEmail}
+                  onChange={e => setAgentEmail(e.target.value)}
+                  className="w-full px-5 py-4 bg-white border-2 border-gray-200 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm hover:border-gray-300"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  {'Phone Number'}
+                </label>
+                <input
+                  type="tel"
+                  placeholder="+251 9X XXX XXXX"
+                  value={agentPhone}
+                  onChange={e => setAgentPhone(e.target.value)}
+                  className="w-full px-5 py-4 bg-white border-2 border-gray-200 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm hover:border-gray-300"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {'Phone Number'}
+                {'What can we help you with?'}
               </label>
-              <input
-                type="tel"
-                placeholder="(555) 000-0000"
-                className="w-full px-5 py-4 bg-white border-2 border-gray-200 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm hover:border-gray-300"
+              <textarea
+                placeholder={'Tell us about your real estate goals...'}
+                rows={5}
+                value={agentMessage}
+                onChange={e => setAgentMessage(e.target.value)}
+                className="w-full px-5 py-4 bg-white border-2 border-gray-200 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all resize-none shadow-sm hover:border-gray-300"
               />
             </div>
-          </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              {'What can we help you with?'}
-            </label>
-            <textarea
-              placeholder={'Tell us about your real estate goals...'}
-              rows={5}
-              className="w-full px-5 py-4 bg-white border-2 border-gray-200 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all resize-none shadow-sm hover:border-gray-300"
-            />
-          </div>
+            {agentError && <p className="text-sm text-red-600">{agentError}</p>}
 
-          <button
-            type="submit"
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-xl font-bold text-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/50 hover:scale-[1.02] transform"
-          >
-            {'Submit Request'}
-          </button>
+            <button
+              type="submit"
+              disabled={agentSubmitting}
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 disabled:opacity-60 text-white py-4 rounded-xl font-bold text-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/50 hover:scale-[1.02] transform flex items-center justify-center gap-2"
+            >
+              {agentSubmitting && <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>}
+              {agentSubmitting ? 'Submitting…' : 'Submit Request'}
+            </button>
 
-          <p className="text-xs text-gray-500 leading-relaxed text-center">
-            By submitting this form, I agree to receive calls and SMS messages from Yevilla for the purpose of updates and promotions. Messages may be sent on a recurring basis and frequency will vary. Message and data rates may apply. Consent to receive SMS messages is not required as a condition for purchasing any goods or services. To unsubscribe from SMS messages, reply "STOP" at any time. For assistance, reply "HELP" or visit our <a href="#" className="text-blue-600 hover:underline">Support Page</a> and <a href="#" className="text-blue-600 hover:underline">FAQ</a>. By proceeding, you confirm that you are creating a Yevilla account and have read and agree to our <a href="#" className="text-blue-600 hover:underline">Privacy Policy</a> and <a href="#" className="text-blue-600 hover:underline">Terms of Use</a>.
-          </p>
-        </form>
+            <p className="text-xs text-gray-500 leading-relaxed text-center">
+              By submitting this form, I agree to receive calls and SMS messages from Yevilla for the purpose of updates and promotions. Messages may be sent on a recurring basis and frequency will vary. Message and data rates may apply. Consent to receive SMS messages is not required as a condition for purchasing any goods or services. To unsubscribe from SMS messages, reply &quot;STOP&quot; at any time. For assistance, <a href="/contact" className="text-blue-600 hover:underline">visit our Contact page</a>. By proceeding, you confirm that you have read and agree to our{' '}
+              <a href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</a>{' '}and{' '}
+              <a href="/terms" className="text-blue-600 hover:underline">Terms of Use</a>.
+            </p>
+          </form>
+        )}
       </section>
 
       {/* Footer */}
@@ -937,15 +1116,19 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                 My Listing
               </button>
 
-              <button onClick={() => { router.push('/sell-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                <Tag className="w-5 h-5" />
-                Sell My Home
-              </button>
+              {isAgentChecked && !isAgent && (
+                <button onClick={() => { router.push('/sell-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+                  <Tag className="w-5 h-5" />
+                  Sell My Home
+                </button>
+              )}
 
-              <button onClick={() => { router.push('/become-an-agent'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                <UserPlus className="w-5 h-5" />
-                Become an Agent
-              </button>
+              {isAgentChecked && !isAgent && (
+                <button onClick={() => { router.push('/become-an-agent'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+                  <UserPlus className="w-5 h-5" />
+                  Become an Agent
+                </button>
+              )}
 
               <div className="border-t border-gray-200 my-2"></div>
 
