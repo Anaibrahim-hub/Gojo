@@ -78,7 +78,7 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const { user, photoURL, signOut } = useAuth();
+  const { user, photoURL, signOut, loading } = useAuth();
   const [isAgent, setIsAgent] = useState(false);
   const [isAgentChecked, setIsAgentChecked] = useState(false);
 
@@ -273,7 +273,7 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
             <SlidersHorizontal className="w-5 h-5 text-gray-700" />
           </button>
 
-          {user ? (
+          {!loading && (user ? (
             <button
               onClick={() => signOut()}
               className="lg:hidden px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-xl hover:bg-red-50 transition-all"
@@ -287,10 +287,10 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
             >
               Sign In
             </button>
-          )}
+          ))}
 
           <div className="hidden lg:flex items-center gap-3">
-            {user ? (
+            {!loading && (user ? (
               <div className="relative" ref={userMenuRef}>
                 <button
                   onClick={() => setShowUserMenu((v) => !v)}
@@ -352,7 +352,7 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
               >
                 Sign In
               </button>
-            )}
+            ))}
           </div>
         </div>
 
