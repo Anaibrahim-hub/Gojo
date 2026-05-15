@@ -1,10 +1,72 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Mail, Phone, MapPin, Clock } from 'lucide-react'
+import { ArrowLeft, Mail, Phone, MapPin, Clock, Loader2, CheckCircle } from 'lucide-react'
+
+const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
+
+interface ContactInfo {
+  phone: string | null
+  email: string | null
+  address: string | null
+  office_hours: string | null
+}
 
 export default function ContactView() {
   const router = useRouter()
+  const [info, setInfo] = useState<ContactInfo | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [subject, setSubject] = useState('')
+  const [message, setMessage] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!WORKER_URL) { setLoading(false); return }
+    fetch(`${WORKER_URL}/contact`)
+      .then(r => r.ok ? r.json() as Promise<ContactInfo> : Promise.reject())
+      .then(data => setInfo(data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim() || !email.trim() || !message.trim()) {
+      setError('Please fill in Name, Email, and Message.')
+      return
+    }
+    setSubmitting(true)
+    setError('')
+    try {
+      const res = await fetch(`${WORKER_URL}/submit-form`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'contact',
+          fields: { Name: name, Email: email, Subject: subject, Message: message },
+        }),
+      })
+      if (!res.ok) throw new Error()
+      setSubmitted(true)
+    } catch {
+      setError('Something went wrong. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const items = [
+    { icon: Phone,  label: 'Phone',        value: info?.phone },
+    { icon: Mail,   label: 'Email',        value: info?.email },
+    { icon: MapPin, label: 'Address',      value: info?.address },
+    { icon: Clock,  label: 'Office Hours', value: info?.office_hours },
+  ]
 
   return (
     <div className="size-full flex flex-col">
@@ -27,97 +89,73 @@ export default function ContactView() {
           <div className="bg-white rounded-xl shadow-md p-6">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Send Us a Message</h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
-                <input
-                  type="text"
-                  placeholder="Your full name"
-                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
-                />
+            {submitted ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+                <CheckCircle className="w-12 h-12 text-green-500" />
+                <p className="text-lg font-semibold text-gray-800">Message sent!</p>
+                <p className="text-sm text-gray-500">We&apos;ll get back to you soon.</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                <input
-                  type="email"
-                  placeholder="you@example.com"
-                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
-                />
-              </div>
-            </div>
+            ) : (
+              <form onSubmit={handleSubmit}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Name *</label>
+                    <input
+                      type="text"
+                      placeholder="Your full name"
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                    <input
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
 
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
-              <input
-                type="text"
-                placeholder="How can we help?"
-                className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
-              />
-            </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
+                  <input
+                    type="text"
+                    placeholder="How can we help?"
+                    value={subject}
+                    onChange={e => setSubject(e.target.value)}
+                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
+                  />
+                </div>
 
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
-              <textarea
-                rows={5}
-                placeholder="Write your message here..."
-                className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
-              />
-            </div>
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Message *</label>
+                  <textarea
+                    rows={5}
+                    placeholder="Write your message here..."
+                    value={message}
+                    onChange={e => setMessage(e.target.value)}
+                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
+                  />
+                </div>
 
-            <button
-              type="button"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-semibold transition-all"
-            >
-              Send Message
-            </button>
+                {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
+
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-3 rounded-lg font-semibold transition-all flex items-center justify-center gap-2"
+                >
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {submitting ? 'Sending…' : 'Send Message'}
+                </button>
+              </form>
+            )}
           </div>
 
-          {/* Contact Info */}
-          <div className="bg-white rounded-xl shadow-md p-6">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Get in Touch</h2>
-
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Phone className="w-4 h-4 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Phone</p>
-                  <p className="text-sm font-semibold text-gray-800">+251 11 000 0000</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Mail className="w-4 h-4 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Email</p>
-                  <p className="text-sm font-semibold text-gray-800">support@gojo.et</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <MapPin className="w-4 h-4 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Address</p>
-                  <p className="text-sm font-semibold text-gray-800">Bole Road, Addis Ababa, Ethiopia</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Clock className="w-4 h-4 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Office Hours</p>
-                  <p className="text-sm font-semibold text-gray-800">Mon–Fri, 8am–6pm</p>
-                </div>
-              </div>
-            </div>
-          </div>
 
         </div>
       </div>
