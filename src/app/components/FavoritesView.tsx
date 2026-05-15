@@ -1,13 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Heart, Home, Key, Map, List, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Heart, Home, Key, Map, List, ChevronDown, Loader2 } from 'lucide-react'
 import { useFavorites } from '@/lib/favorites-context'
-import { mockProperties, type Property } from '@/app/data/properties'
+import { apiListingToProperty, type Property } from '@/app/data/properties'
 import MapView from './MapView'
 import PropertyCard from './PropertyCard'
 import PropertyModal from './PropertyModal'
+
+const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
 
 export default function FavoritesView() {
   const router = useRouter()
@@ -17,8 +19,26 @@ export default function FavoritesView() {
   const [listingMode, setListingMode] = useState<'buy' | 'rent'>('buy')
   const [mobileView, setMobileView] = useState<'map' | 'list'>('list')
   const [sortBy, setSortBy] = useState<'recommended' | 'price-low' | 'price-high' | 'beds' | 'baths' | 'sqft'>('recommended')
+  const [apiListings, setApiListings] = useState<Property[]>([])
+  const [loadingListings, setLoadingListings] = useState(true)
 
-  const favoriteProperties = mockProperties.filter((p) => favorites.has(p.id))
+  useEffect(() => {
+    if (mobileView === 'map') window.dispatchEvent(new Event('resize'))
+  }, [mobileView])
+
+  useEffect(() => {
+    if (!WORKER_URL) { setLoadingListings(false); return }
+    fetch(`${WORKER_URL}/listings`)
+      .then(async res => {
+        if (!res.ok) return
+        const data = await res.json() as Record<string, unknown>[]
+        setApiListings(data.map(apiListingToProperty))
+      })
+      .catch(() => {})
+      .finally(() => setLoadingListings(false))
+  }, [])
+
+  const favoriteProperties = apiListings.filter((p) => favorites.has(p.id))
 
   const sorted = [...favoriteProperties]
   if (sortBy === 'price-low') sorted.sort((a, b) => (listingMode === 'buy' ? a.price - b.price : a.rent - b.rent))
@@ -70,7 +90,11 @@ export default function FavoritesView() {
         </div>
       </div>
 
-      {favoriteProperties.length === 0 ? (
+      {loadingListings ? (
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+        </div>
+      ) : favoriteProperties.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
           <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-5">
             <Heart className="w-9 h-9 text-gray-300" />
@@ -92,7 +116,7 @@ export default function FavoritesView() {
           <div className={`w-full lg:w-1/2 h-full ${mobileView === 'list' ? 'hidden lg:block' : ''}`}>
             <MapView
               properties={sorted}
-              onPropertyClick={setSelectedProperty}
+              onPropertyClick={(p) => setSelectedProperty(p)}
               hoveredPropertyId={hoveredPropertyId}
               onMarkerHover={setHoveredPropertyId}
               listingMode={listingMode}

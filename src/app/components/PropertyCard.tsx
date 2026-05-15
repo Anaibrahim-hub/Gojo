@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bed, Bath, Maximize, Heart, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Bed, Bath, Maximize, Heart, ChevronLeft, ChevronRight, Share2, Check } from 'lucide-react';
 import { useFavorites } from '@/lib/favorites-context';
 
 interface PropertyCardProps {
@@ -16,6 +16,7 @@ interface PropertyCardProps {
     sqft: number;
     status: 'active' | 'pending' | 'new';
     image: string;
+    photos?: string[];
     lat: number;
     lng: number;
     type: 'sale' | 'rent' | 'both';
@@ -31,23 +32,50 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [touchStart, setTouchStart] = useState(0);
   const [touchEnd, setTouchEnd] = useState(0);
+  const [copied, setCopied] = useState(false);
   const { isFavorite, toggleFavorite } = useFavorites();
 
-  const statusConfig = {
-    active: { bg: 'bg-slate-600', text: 'Active' },
-    pending: { bg: 'bg-amber-500', text: 'Pending' },
-    new: { bg: 'bg-emerald-500', text: 'New' },
+  const handleShare = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}/listings?q=${encodeURIComponent(property.address)}`;
+    const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+    if (isMobile && navigator.share) {
+      try {
+        await navigator.share({ title: property.address, text: `${property.address}, ${property.city}`, url });
+      } catch { /* user cancelled */ }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Fallback for HTTP or restricted contexts
+      const el = document.createElement('textarea');
+      el.value = url;
+      el.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  const displayPrice = listingMode === 'buy' ? property.price : property.rent;
-  const priceLabel = listingMode === 'buy' ? '' : '/mo';
+  const wantBuy = listingMode === 'buy';
+  const hasSalePrice = property.price > 0;
+  const hasRentPrice = property.rent > 0;
+  const showRent = (!wantBuy || !hasSalePrice) && hasRentPrice;
+  const displayPrice = showRent ? property.rent : property.price;
+  const priceLabel = showRent ? '/mo' : '';
 
-  const propertyImages = [
-    property.image,
-    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800',
-    'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=800',
-    'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?w=800',
-  ];
+  const propertyImages = property.photos?.length
+    ? property.photos
+    : [
+        property.image,
+        'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800',
+        'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=800',
+        'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?w=800',
+      ];
 
   const nextImage = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -113,44 +141,55 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
-        <div className={`absolute top-3 left-3 ${statusConfig[property.status].bg} text-white px-3 py-1 rounded-full text-xs font-medium shadow-lg backdrop-blur-sm`}>
-          {statusConfig[property.status].text}
+        <div className="absolute top-3 right-3 flex flex-col gap-2 z-10">
+          <button
+            onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
+            className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
+          >
+            <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+          </button>
+          <button
+            onClick={handleShare}
+            className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
+          >
+            {copied
+              ? <Check className="w-4 h-4 text-green-500" />
+              : <Share2 className="w-4 h-4 text-gray-700" />
+            }
+          </button>
         </div>
 
-        <button
-          onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-          className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
-        >
-          <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
-        </button>
-
-        <button
-          onClick={prevImage}
-          className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-lg hover:bg-white transition-all opacity-0 group-hover/image:opacity-100"
-        >
-          <ChevronLeft className="w-4 h-4 text-gray-700" />
-        </button>
-
-        <button
-          onClick={nextImage}
-          className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-lg hover:bg-white transition-all opacity-0 group-hover/image:opacity-100"
-        >
-          <ChevronRight className="w-4 h-4 text-gray-700" />
-        </button>
-
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-          {propertyImages.map((_, index) => (
+        {propertyImages.length > 1 && (
+          <>
             <button
-              key={index}
-              onClick={(e) => goToImage(e, index)}
-              className={`w-2 h-2 rounded-full transition-all ${
-                index === currentImageIndex
-                  ? 'bg-white w-6'
-                  : 'bg-white/60 hover:bg-white/80'
-              }`}
-            />
-          ))}
-        </div>
+              onClick={prevImage}
+              className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-lg hover:bg-white transition-all opacity-0 group-hover/image:opacity-100"
+            >
+              <ChevronLeft className="w-4 h-4 text-gray-700" />
+            </button>
+
+            <button
+              onClick={nextImage}
+              className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-lg hover:bg-white transition-all opacity-0 group-hover/image:opacity-100"
+            >
+              <ChevronRight className="w-4 h-4 text-gray-700" />
+            </button>
+
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+              {propertyImages.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={(e) => goToImage(e, index)}
+                  className={`w-2 h-2 rounded-full transition-all ${
+                    index === currentImageIndex
+                      ? 'bg-white w-6'
+                      : 'bg-white/60 hover:bg-white/80'
+                  }`}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </div>
       <div className="p-4 lg:p-5">
         <div className="text-lg lg:text-xl font-bold text-black mb-3">
