@@ -96,7 +96,7 @@ function saveRecent(item: RecentSearch) {
 
 export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageProps) {
   const router = useRouter();
-  const { user, photoURL, signOut } = useAuth();
+  const { user, photoURL, signOut, loading } = useAuth();
   const { isFavorite, toggleFavorite } = useFavorites();
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showSignInModal, setShowSignInModal] = useState(false);
@@ -309,7 +309,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
           </div>
 
           <div className="flex items-center gap-2 lg:gap-3">
-            {user ? (
+            {!loading && (user ? (
               <>
                 {/* Desktop user menu */}
                 <div className="relative hidden lg:block" ref={userMenuRef}>
@@ -381,7 +381,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
               >
                 Sign In
               </button>
-            )}
+            ))}
           </div>
         </div>
       </header>
@@ -879,7 +879,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
               {agentSubmitting ? 'Submitting…' : 'Submit Request'}
             </button>
 
-            <p className="text-xs text-gray-500 leading-relaxed text-center">
+            <p className="text-xs text-gray-500 leading-relaxed">
               By submitting this form, I agree to receive calls and SMS messages from Yevilla for the purpose of updates and promotions. Messages may be sent on a recurring basis and frequency will vary. Message and data rates may apply. Consent to receive SMS messages is not required as a condition for purchasing any goods or services. To unsubscribe from SMS messages, reply &quot;STOP&quot; at any time. For assistance, <a href="/contact" className="text-blue-600 hover:underline">visit our Contact page</a>. By proceeding, you confirm that you have read and agree to our{' '}
               <a href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</a>{' '}and{' '}
               <a href="/terms" className="text-blue-600 hover:underline">Terms of Use</a>.
