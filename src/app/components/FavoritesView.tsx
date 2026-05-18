@@ -104,7 +104,7 @@ export default function FavoritesView() {
             Tap the heart on any listing to save it here for easy access later.
           </p>
           <button
-            onClick={() => router.push('/listings')}
+            onClick={() => router.back()}
             className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all shadow-md"
           >
             Browse Listings

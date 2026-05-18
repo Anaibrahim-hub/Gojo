@@ -172,6 +172,19 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showUserMenu]);
 
+  useEffect(() => {
+    if (!showSearchModal) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [showSearchModal]);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [showMenu]);
 
   const formatPrice = (price: number) => {
     if (price >= 1_000_000) return 'Br ' + (price / 1_000_000).toFixed(1) + 'M';

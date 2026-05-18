@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { X, Mail, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 import { useAuth } from '@/lib/auth-context'
 
 type View = 'options' | 'email'
@@ -9,6 +10,8 @@ type View = 'options' | 'email'
 const FIREBASE_ERRORS: Record<string, string> = {
   'auth/invalid-email': 'Please enter a valid email address.',
   'auth/too-many-requests': 'Too many attempts. Please try again later.',
+  'auth/popup-blocked': 'Popup was blocked — please allow popups for this site and try again.',
+  'auth/unauthorized-domain': 'This domain is not authorised in Firebase. Add it under Authentication → Settings → Authorised domains.',
   'auth/popup-closed-by-user': '',
   'auth/cancelled-popup-request': '',
 }
@@ -33,7 +36,11 @@ export default function SignInModal({ open, onClose }: Props) {
       setSent(false)
       setError('')
       setLoading(false)
+      return;
     }
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
   }, [open])
 
   if (!open) return null
@@ -114,7 +121,14 @@ export default function SignInModal({ open, onClose }: Props) {
             </div>
 
             <p className="text-xs text-gray-400 text-center mt-5">
-              By continuing, you agree to our Terms of Service and Privacy Policy.
+              By proceeding, you confirm that you have read and agree to our{' '}
+              <Link href="/privacy" onClick={onClose} className="underline hover:text-gray-600">
+                Privacy Policy
+              </Link>{' '}
+              and{' '}
+              <Link href="/terms" onClick={onClose} className="underline hover:text-gray-600">
+                Terms of Use
+              </Link>.
             </p>
           </>
         )}

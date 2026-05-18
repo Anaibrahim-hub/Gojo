@@ -29,6 +29,13 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
 
   useEffect(() => {
     if (!property) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [property]);
+
+  useEffect(() => {
+    if (!property) return;
     history.pushState({ modal: true }, '');
     pushedHistoryRef.current = true;
     const handlePopState = () => {
