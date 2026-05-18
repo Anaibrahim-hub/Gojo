@@ -53,7 +53,12 @@ export const LOCAL_PLACES: LocalPlace[] = [
 export function filterLocalPlaces(query: string): LocalPlace[] {
   const q = query.toLowerCase().trim();
   if (q.length < 1) return [];
+  const words = q.split(/\s+/).filter(Boolean);
+  const matchesAll = (p: LocalPlace) => {
+    const full = (p.text + ' ' + p.place_name).toLowerCase();
+    return words.every(w => full.includes(w));
+  };
   const startsWith = LOCAL_PLACES.filter(p => p.text.toLowerCase().startsWith(q));
-  const contains = LOCAL_PLACES.filter(p => !p.text.toLowerCase().startsWith(q) && p.text.toLowerCase().includes(q));
+  const contains = LOCAL_PLACES.filter(p => !p.text.toLowerCase().startsWith(q) && matchesAll(p));
   return [...startsWith, ...contains].slice(0, 4);
 }

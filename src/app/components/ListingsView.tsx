@@ -68,11 +68,20 @@ export default function ListingsView() {
     const filtered = apiListings.filter((property) => {
       if (listingMode === 'buy' && property.type === 'rent') return false
       if (listingMode === 'rent' && property.type === 'sale') return false
-      if (q && !property.address.toLowerCase().includes(q) &&
-               !property.city.toLowerCase().includes(q) &&
-               !property.state.toLowerCase().includes(q) &&
-               !property.zip.includes(q) &&
-               !(property.propertyType ?? '').toLowerCase().includes(q)) return false
+      if (q) {
+        const words = q.split(/\s+/).filter(Boolean)
+        const haystack = [
+          property.address,
+          property.city,
+          property.state,
+          property.zip,
+          property.propertyType ?? '',
+          property.subCity ?? '',
+          property.woreda ?? '',
+          property.landmark ?? '',
+        ].join(' ').toLowerCase()
+        if (!words.every(w => haystack.includes(w))) return false
+      }
       const priceValue = listingMode === 'buy' ? property.price : property.rent
       if (filters.minPrice && priceValue < parseInt(filters.minPrice)) return false
       if (filters.maxPrice && priceValue > parseInt(filters.maxPrice)) return false
