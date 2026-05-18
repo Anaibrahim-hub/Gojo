@@ -23,9 +23,7 @@ function apiListingToProperty(d: Record<string, unknown>): Property {
     firestoreId: d.id as string,
     price: 0,
     rent: (d.monthlyRent as number) ?? 0,
-    address: (d.landmark as string) ||
-      [(d.subCity as string), (d.woreda as string)].filter(Boolean).join(', ') ||
-      (d.city as string) || '',
+    address: (d.landmark as string) || (d.woreda as string) || '',
     city: (d.city as string) ?? '',
     state: '',
     zip: '',
@@ -50,7 +48,18 @@ function apiListingToProperty(d: Record<string, unknown>): Property {
     availableFrom: (d.availableFrom as string | null) ?? null,
     description: (d.description as string) ?? undefined,
     amenities: (d.amenities as string[]) ?? [],
+    createdAt: (d.createdAt as number) ?? undefined,
   }
+}
+
+function getNewBadgeLabel(createdAt?: number): string | null {
+  if (!createdAt) return null;
+  const diffHrs = (Date.now() - createdAt) / (1000 * 60 * 60);
+  if (diffHrs < 1) return 'New just now';
+  if (diffHrs < 24) { const h = Math.floor(diffHrs); return `New ${h} ${h === 1 ? 'hr' : 'hrs'} ago`; }
+  const d = Math.floor(diffHrs / 24);
+  if (d <= 7) return `New ${d} ${d === 1 ? 'day' : 'days'} ago`;
+  return null;
 }
 
 interface GeocodingFeature {
@@ -151,6 +160,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
   const recommendedRef = useRef<HTMLDivElement>(null);
   const forSaleRef = useRef<HTMLDivElement>(null);
   const forRentRef = useRef<HTMLDivElement>(null);
+  const talkToAgentRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -192,7 +202,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       .then(async res => {
         if (!res.ok) return
         const data = await res.json() as Record<string, unknown>[]
-        setApiListings(data.map(apiListingToProperty))
+        setApiListings(data.map(apiListingToProperty).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)))
       })
       .catch(() => {/* Worker unavailable */})
       .finally(() => setLoadingListings(false))
@@ -294,10 +304,10 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            {user && (
+            {!loading && (
               <button
                 onClick={() => setShowMenu(true)}
-                className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-all"
+                className={`p-2 hover:bg-gray-100 rounded-lg transition-all ${user ? 'lg:hidden' : ''}`}
               >
                 <Menu className="w-6 h-6 text-gray-700" />
               </button>
@@ -387,23 +397,29 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       </header>
 
       {/* Hero Search */}
-      <section className="max-w-7xl mx-auto px-4 lg:px-6 py-6 lg:py-12">
-        <div className="text-center mb-6 lg:mb-8">
-          <h1 className="text-3xl lg:text-5xl font-bold text-gray-900 mb-3 lg:mb-4">
-            Find Your Dream Home in Ethiopia
-          </h1>
-          <p className="text-base lg:text-lg text-gray-600 px-2 max-w-2xl mx-auto">
-            Yevilla is Ethiopia&apos;s real estate marketplace — search homes for sale and rent in Addis Ababa and across the country, connect with local agents, and list your property in minutes.
-          </p>
-        </div>
+      <section
+        className="relative w-full py-16 lg:py-28"
+        style={{ backgroundImage: 'url(/hero-bg.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}
+      >
+        <div className="absolute inset-0 bg-black/50" />
+        <div className="relative z-10 max-w-7xl mx-auto px-4 lg:px-6">
+          <div className="text-center mb-6 lg:mb-8">
+            <h1 className="text-3xl lg:text-5xl font-bold text-white mb-3 lg:mb-4">
+              Find Your Dream Home in Ethiopia
+            </h1>
+            <p className="text-base lg:text-lg text-white/80 px-2 max-w-2xl mx-auto">
+              Discover the perfect property in your ideal neighborhood.
+            </p>
+          </div>
 
-        <div
-          onClick={openSearchModal}
-          className="max-w-2xl mx-auto bg-white rounded-xl lg:rounded-2xl shadow-lg lg:shadow-xl p-3 lg:p-4 cursor-pointer hover:shadow-2xl transition-all border-2 border-gray-100 hover:border-blue-500"
-        >
-          <div className="flex items-center gap-3 lg:gap-4">
-            <Search className="w-5 h-5 lg:w-6 lg:h-6 text-gray-400" />
-            <span className="flex-1 text-base lg:text-lg text-gray-400">Search by city, neighborhood, or ZIP...</span>
+          <div
+            onClick={openSearchModal}
+            className="max-w-2xl mx-auto bg-white rounded-xl lg:rounded-2xl shadow-lg lg:shadow-xl p-3 lg:p-4 cursor-pointer hover:shadow-2xl transition-all border-2 border-gray-100 hover:border-blue-500"
+          >
+            <div className="flex items-center gap-3 lg:gap-4">
+              <Search className="w-5 h-5 lg:w-6 lg:h-6 text-gray-400" />
+              <span className="flex-1 text-base lg:text-lg text-gray-400">Search by city, neighborhood, or ZIP...</span>
+            </div>
           </div>
         </div>
       </section>
@@ -445,23 +461,30 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                    <button
-                      onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-                      className="absolute top-2 lg:top-3 left-2 lg:left-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
-                    >
-                      <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
-                    </button>
-                    <button
-                      onClick={(e) => handleShare(e, property)}
-                      className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
-                    >
-                      {sharedId === property.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-700" />}
-                    </button>
+                    {getNewBadgeLabel(property.createdAt) && (
+                      <span className="absolute top-2 lg:top-3 left-2 lg:left-3 z-10 bg-green-800 text-white text-xs font-semibold px-2.5 py-1 rounded-full shadow-lg">
+                        {getNewBadgeLabel(property.createdAt)}
+                      </span>
+                    )}
+                    <div className="absolute top-2 lg:top-3 right-2 lg:right-3 flex flex-col gap-2 z-10">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
+                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
+                      >
+                        <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                      </button>
+                      <button
+                        onClick={(e) => handleShare(e, property)}
+                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
+                      >
+                        {sharedId === property.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-700" />}
+                      </button>
+                    </div>
                     <div className="absolute bottom-2 lg:bottom-3 left-2 lg:left-3 right-2 lg:right-3">
                       <div className="text-white text-xl lg:text-2xl font-bold">
                         {property.type === 'rent' ? `Br ${property.rent.toLocaleString()}/mo` : formatPrice(property.price)}
                       </div>
-                      <div className="text-white/90 text-xs lg:text-sm">{property.city}{property.state ? `, ${property.state}` : ''}</div>
+                      <div className="text-white/90 text-xs lg:text-sm">{[property.subCity, property.city].filter(Boolean).join(', ')}</div>
                     </div>
                   </div>
                   <div className="p-3 lg:p-4">
@@ -536,6 +559,11 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {getNewBadgeLabel(property.createdAt) && (
+                      <span className="absolute top-2 lg:top-3 left-2 lg:left-3 z-10 bg-green-800 text-white text-xs font-semibold px-2.5 py-1 rounded-full shadow-lg">
+                        {getNewBadgeLabel(property.createdAt)}
+                      </span>
+                    )}
                     <div className="absolute top-2 lg:top-3 right-2 lg:right-3 flex flex-col gap-2 z-10">
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
@@ -561,7 +589,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                       <span>{property.baths} {'ba'}</span>
                       {property.sqft > 0 && <><span>•</span><span>{property.sqft.toLocaleString()} sqft</span></>}
                     </div>
-                    <div className="text-gray-700 font-medium text-sm lg:text-base">{property.city}{property.state ? `, ${property.state}` : ''}</div>
+                    <div className="text-gray-700 font-medium text-sm lg:text-base">{[property.subCity, property.city].filter(Boolean).join(', ')}</div>
                   </div>
                 </div>
               ))}
@@ -626,6 +654,11 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {getNewBadgeLabel(property.createdAt) && (
+                      <span className="absolute top-2 lg:top-3 left-2 lg:left-3 z-10 bg-green-800 text-white text-xs font-semibold px-2.5 py-1 rounded-full shadow-lg">
+                        {getNewBadgeLabel(property.createdAt)}
+                      </span>
+                    )}
                     <div className="absolute top-2 lg:top-3 right-2 lg:right-3 flex flex-col gap-2 z-10">
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
@@ -652,7 +685,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                       <span>•</span>
                       <span>{property.sqft.toLocaleString()} {'sqft'}</span>
                     </div>
-                    <div className="text-gray-700 font-medium text-sm lg:text-base">{property.city}{property.state ? `, ${property.state}` : ''}</div>
+                    <div className="text-gray-700 font-medium text-sm lg:text-base">{[property.subCity, property.city].filter(Boolean).join(', ')}</div>
                   </div>
                 </div>
               ))}
@@ -705,6 +738,11 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {getNewBadgeLabel(property.createdAt) && (
+                      <span className="absolute top-2 lg:top-3 left-2 lg:left-3 z-10 bg-green-800 text-white text-xs font-semibold px-2.5 py-1 rounded-full shadow-lg">
+                        {getNewBadgeLabel(property.createdAt)}
+                      </span>
+                    )}
                     <div className="absolute top-2 lg:top-3 right-2 lg:right-3 flex flex-col gap-2 z-10">
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
@@ -732,7 +770,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                       <span>{property.sqft.toLocaleString()} sqft</span>
                     </div>
                     <div className="text-gray-700 font-medium text-sm lg:text-base">{property.address}</div>
-                    <div className="text-gray-500 text-xs lg:text-sm">{property.city}, {property.state}</div>
+                    <div className="text-gray-500 text-xs lg:text-sm">{[property.subCity, property.city].filter(Boolean).join(', ')}</div>
                   </div>
                 </div>
               ))}
@@ -768,6 +806,11 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                {getNewBadgeLabel(myListing.createdAt) && (
+                  <span className="absolute top-2 lg:top-3 left-2 lg:left-3 z-10 bg-green-800 text-white text-xs font-semibold px-2.5 py-1 rounded-full shadow-lg">
+                    {getNewBadgeLabel(myListing.createdAt)}
+                  </span>
+                )}
                 <button
                   onClick={(e) => handleShare(e, myListing)}
                   className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
@@ -778,7 +821,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                   <div className="text-white text-xl lg:text-2xl font-bold">
                     Br {myListing.rent.toLocaleString()}/mo
                   </div>
-                  <div className="text-white/90 text-xs lg:text-sm">{myListing.city}</div>
+                  <div className="text-white/90 text-xs lg:text-sm">{[myListing.subCity, myListing.city].filter(Boolean).join(', ')}</div>
                 </div>
               </div>
               <div className="p-3 lg:p-4">
@@ -798,7 +841,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       )}
 
       {/* Talk to an Agent */}
-      <section className="max-w-3xl mx-auto px-4 lg:px-6 py-8 lg:py-16">
+      <section ref={talkToAgentRef} className="max-w-3xl mx-auto px-4 lg:px-6 py-8 lg:py-16">
         <div className="text-center mb-6 lg:mb-10">
           <h2 className="text-2xl lg:text-5xl font-bold text-gray-900 mb-3 lg:mb-4">{'Talk to an Agent'}</h2>
           <p className="text-gray-600 text-base lg:text-xl max-w-2xl mx-auto px-2">
@@ -1057,14 +1100,14 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
 
       <SignInModal open={showSignInModal} onClose={() => setShowSignInModal(false)} />
 
-      {/* Mobile Menu */}
-      {showMenu && user && (
+      {/* Menu (mobile for signed-in, all screens for signed-out) */}
+      {showMenu && (
         <>
           <div
-            className="fixed inset-0 bg-black/50 z-[1000] lg:hidden"
+            className={`fixed inset-0 bg-black/50 z-[1000] ${user ? 'lg:hidden' : ''}`}
             onClick={() => setShowMenu(false)}
           />
-          <div className="fixed top-0 left-0 h-full w-80 bg-white z-[1001] shadow-2xl lg:hidden transform transition-transform">
+          <div className={`fixed top-0 left-0 h-full w-80 bg-white z-[1001] shadow-2xl ${user ? 'lg:hidden' : ''} transform transition-transform`}>
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
               <div className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                 Yevilla
@@ -1079,73 +1122,71 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
 
             <div className="p-4 space-y-1">
               {user ? (
-                <div className="flex items-center gap-3 px-4 py-3 mb-1">
-                  {photoURL
-                    ? <img src={photoURL} alt={user.displayName || ''} className="w-9 h-9 rounded-full object-cover flex-shrink-0" referrerPolicy="no-referrer" />
-                    : <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">{user.displayName?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}</div>
-                  }
-                  <div className="min-w-0">
-                    {user.displayName && <p className="font-semibold text-gray-900 truncate text-sm">{user.displayName}</p>}
-                    <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={() => { setShowSignInModal(true); setShowMenu(false); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"
-                >
-                  <User className="w-5 h-5" />
-                  Sign In
-                </button>
-              )}
-
-              <button onClick={() => { router.push('/favorites'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                <Heart className="w-5 h-5" />
-                Favorites
-              </button>
-
-              <button onClick={() => { router.push('/settings'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                <Settings className="w-5 h-5" />
-                Settings
-              </button>
-
-              <div className="border-t border-gray-200 my-2"></div>
-
-              <button onClick={() => { router.push('/list-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                <Key className="w-5 h-5" />
-                My Listing
-              </button>
-
-              {isAgentChecked && !isAgent && (
-                <button onClick={() => { router.push('/sell-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                  <Tag className="w-5 h-5" />
-                  Sell My Home
-                </button>
-              )}
-
-              {isAgentChecked && !isAgent && (
-                <button onClick={() => { router.push('/become-an-agent'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                  <UserPlus className="w-5 h-5" />
-                  Become an Agent
-                </button>
-              )}
-
-              <div className="border-t border-gray-200 my-2"></div>
-
-              <button onClick={() => { router.push('/contact'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                <MessageCircle className="w-5 h-5" />
-                Contact Us
-              </button>
-
-              {user && (
                 <>
-                  <div className="border-t border-gray-200 my-2"></div>
+                  <div className="flex items-center gap-3 px-4 py-3 mb-1">
+                    {photoURL
+                      ? <img src={photoURL} alt={user.displayName || ''} className="w-9 h-9 rounded-full object-cover flex-shrink-0" referrerPolicy="no-referrer" />
+                      : <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">{user.displayName?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}</div>
+                    }
+                    <div className="min-w-0">
+                      {user.displayName && <p className="font-semibold text-gray-900 truncate text-sm">{user.displayName}</p>}
+                      <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                    </div>
+                  </div>
+
+                  <button onClick={() => { router.push('/favorites'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+                    <Heart className="w-5 h-5" />Favorites
+                  </button>
+                  <button onClick={() => { router.push('/settings'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+                    <Settings className="w-5 h-5" />Settings
+                  </button>
+                  <div className="border-t border-gray-200 my-2" />
+                  <button onClick={() => { router.push('/list-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+                    <Key className="w-5 h-5" />My Listing
+                  </button>
+                  {isAgentChecked && !isAgent && (
+                    <button onClick={() => { router.push('/sell-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+                      <Tag className="w-5 h-5" />Sell My Home
+                    </button>
+                  )}
+                  {isAgentChecked && !isAgent && (
+                    <button onClick={() => { router.push('/become-an-agent'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+                      <UserPlus className="w-5 h-5" />Become an Agent
+                    </button>
+                  )}
+                  <div className="border-t border-gray-200 my-2" />
+                  <button onClick={() => { router.push('/contact'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+                    <MessageCircle className="w-5 h-5" />Contact Us
+                  </button>
+                  <div className="border-t border-gray-200 my-2" />
+                  <button onClick={() => { signOut(); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-red-50 rounded-lg transition-all font-medium text-red-600">
+                    <LogOut className="w-5 h-5" />Sign Out
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => { setShowSignInModal(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-blue-50 rounded-lg transition-all font-semibold text-blue-600">
+                    <User className="w-5 h-5" />Sign In
+                  </button>
+                  <div className="border-t border-gray-200 my-2" />
+                  <button onClick={() => { setShowSignInModal(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+                    <Heart className="w-5 h-5" />Favorites
+                  </button>
+                  <button onClick={() => { setShowSignInModal(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+                    <Key className="w-5 h-5" />My Listing
+                  </button>
+                  <button onClick={() => { setShowSignInModal(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+                    <Tag className="w-5 h-5" />Sell My Home
+                  </button>
+                  <button onClick={() => { setShowSignInModal(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
+                    <UserPlus className="w-5 h-5" />Become an Agent
+                  </button>
+                  <div className="border-t border-gray-200 my-2" />
                   <button
-                    onClick={() => { signOut(); setShowMenu(false); }}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-red-50 rounded-lg transition-all font-medium text-red-600"
+                    onClick={() => { setShowMenu(false); setTimeout(() => talkToAgentRef.current?.scrollIntoView({ behavior: 'smooth' }), 300); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"
                   >
-                    <LogOut className="w-5 h-5" />
-                    Sign Out
+                    <MessageCircle className="w-5 h-5" />Contact Us
                   </button>
                 </>
               )}

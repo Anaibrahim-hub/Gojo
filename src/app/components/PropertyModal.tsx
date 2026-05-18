@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Bed, Bath, Maximize, ChevronLeft, ChevronRight, Mail, Phone, User } from 'lucide-react';
+import { X, Bed, Bath, Maximize, ChevronLeft, ChevronRight, Mail, Phone } from 'lucide-react';
 import { type Property } from '@/app/data/properties';
 import { useAuth } from '@/lib/auth-context';
 
@@ -14,6 +14,9 @@ const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
 export default function PropertyModal({ property, onClose, listingMode }: PropertyModalProps) {
   const [slideshowIndex, setSlideshowIndex] = useState<number | null>(null);
   const { user, photoURL } = useAuth();
+  const onCloseRef = React.useRef(onClose);
+  const pushedHistoryRef = React.useRef(false);
+  useEffect(() => { onCloseRef.current = onClose; });
 
   useEffect(() => {
     if (!property?.firestoreId || !WORKER_URL) return
@@ -24,6 +27,27 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
     }).catch(() => {})
   }, [property?.firestoreId]);
 
+  useEffect(() => {
+    if (!property) return;
+    history.pushState({ modal: true }, '');
+    pushedHistoryRef.current = true;
+    const handlePopState = () => {
+      pushedHistoryRef.current = false;
+      onCloseRef.current();
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => { window.removeEventListener('popstate', handlePopState); };
+  }, [property]);
+
+  const handleClose = () => {
+    if (pushedHistoryRef.current) {
+      pushedHistoryRef.current = false;
+      history.back();
+    } else {
+      onCloseRef.current();
+    }
+  };
+
   if (!property) return null;
 
   const isOwner = !!user && (user.email === property.ownerEmail || user.uid === property.firestoreId)
@@ -33,8 +57,12 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
     ? property.photos
     : [property.image];
 
-  const displayPrice = listingMode === 'buy' ? (property.price || 0) : (property.rent || 0);
-  const priceLabel = listingMode === 'buy' ? '' : '/mo';
+  const wantBuy = listingMode === 'buy';
+  const hasSalePrice = (property.price ?? 0) > 0;
+  const hasRentPrice = (property.rent ?? 0) > 0;
+  const showRent = (!wantBuy || !hasSalePrice) && hasRentPrice;
+  const displayPrice = showRent ? property.rent : property.price;
+  const priceLabel = showRent ? '/mo' : '';
 
   const nextImage = () => {
     if (slideshowIndex !== null) {
@@ -57,7 +85,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-0 lg:p-4" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-0 lg:p-4" onClick={handleClose}>
         <div className="flex items-start gap-4 w-full h-full lg:h-auto justify-center">
 
           {/* Main property modal */}
@@ -68,10 +96,10 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
                   Br {displayPrice.toLocaleString()}{priceLabel}
                 </h2>
                 <p className="text-gray-600 text-sm lg:text-base truncate font-medium mt-1">
-                  {[property.address, property.city, property.state].filter(Boolean).join(', ')}
+                  {[property.address, property.subCity, property.city].filter(Boolean).join(', ')}
                 </p>
               </div>
-              <button onClick={onClose} className="p-2 lg:p-3 hover:bg-gray-100 rounded-full flex-shrink-0 ml-2 transition-all hover:rotate-90">
+              <button onClick={handleClose} className="p-2 lg:p-3 hover:bg-gray-100 rounded-full flex-shrink-0 ml-2 transition-all hover:rotate-90">
                 <X className="w-5 h-5 lg:w-6 lg:h-6" />
               </button>
             </div>
@@ -79,14 +107,13 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
             <div className="flex-1 overflow-y-auto">
               <div className="grid grid-cols-2 gap-2 lg:gap-3 p-3 lg:p-6 bg-gray-50">
                 {propertyImages.map((img, idx) => (
-                  <div key={idx} className={`relative group ${idx === 0 ? 'col-span-2' : ''}`}>
+                  <div key={idx} className={`relative group overflow-hidden rounded-xl shadow-md cursor-pointer ${idx === 0 ? 'col-span-2 h-56 lg:h-96' : 'h-36 lg:h-52'}`} onClick={(e) => { e.stopPropagation(); setSlideshowIndex(idx); }}>
                     <img
                       src={img}
                       alt={`Property ${idx + 1}`}
-                      className={`w-full object-cover rounded-xl cursor-pointer transition-all ${idx === 0 ? 'h-56 lg:h-96' : 'h-36 lg:h-52'} group-hover:scale-[1.02] shadow-md group-hover:shadow-xl`}
-                      onClick={(e) => { e.stopPropagation(); setSlideshowIndex(idx); }}
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 rounded-xl transition-all pointer-events-none" />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
                   </div>
                 ))}
               </div>
@@ -220,7 +247,9 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
                     />
                   ) : (
                     <div className="w-24 h-24 rounded-full bg-white/20 ring-4 ring-white/80 shadow-xl mx-auto flex items-center justify-center">
-                      <User className="w-12 h-12 text-white/70" />
+                      <span className="text-white text-3xl font-bold select-none">
+                        {(property.ownerDisplayName ?? property.ownerEmail ?? '?')[0].toUpperCase()}
+                      </span>
                     </div>
                   )}
                   <span className="absolute bottom-1 right-1 w-4 h-4 bg-green-400 border-2 border-white rounded-full" />

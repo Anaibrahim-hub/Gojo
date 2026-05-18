@@ -47,6 +47,12 @@ export default function ListingsView() {
   const [loadingListings, setLoadingListings] = useState(true)
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    params.set('mode', listingMode)
+    router.replace(`/listings?${params.toString()}`, { scroll: false })
+  }, [listingMode])
+
+  useEffect(() => {
     if (mobileView === 'map') window.dispatchEvent(new Event('resize'))
   }, [mobileView])
 
@@ -103,6 +109,8 @@ export default function ListingsView() {
       sorted.sort((a, b) => b.baths - a.baths)
     } else if (sortBy === 'sqft') {
       sorted.sort((a, b) => b.sqft - a.sqft)
+    } else {
+      sorted.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
     }
     return sorted
   }, [filters, listingMode, sortBy, searchQuery, apiListings])
