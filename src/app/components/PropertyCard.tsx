@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Bed, Bath, Maximize, Heart, ChevronLeft, ChevronRight, Share2, Check } from 'lucide-react';
 import { useFavorites } from '@/lib/favorites-context';
+import { formatETB } from '@/app/components/ui/utils';
 
 function getNewBadgeLabel(createdAt?: number): string | null {
   if (!createdAt) return null;
@@ -217,7 +218,7 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
       </div>
       <div className="p-4 lg:p-5">
         <div className="text-lg lg:text-xl font-bold text-black mb-3">
-          Br {displayPrice.toLocaleString()}{priceLabel}
+          {formatETB(displayPrice)}{priceLabel}
         </div>
         <div className="flex items-center gap-3 lg:gap-5 text-gray-600 mb-3 text-xs lg:text-base">
           <div className="flex items-center gap-1 lg:gap-1.5">

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import Map, { Marker, Popup, NavigationControl, FullscreenControl } from 'react-map-gl/mapbox'
 import type { MapRef } from 'react-map-gl/mapbox'
 import type { Property } from '@/app/data/properties'
+import { formatETB, formatETBCompact } from '@/app/components/ui/utils'
 
 interface MapViewProps {
   properties: Property[]
@@ -34,16 +35,15 @@ export default function MapView({ properties, onPropertyClick, hoveredPropertyId
   const getDisplayPrice = (property: Property) =>
     listingMode === 'buy' ? property.price : property.rent
 
-  const formatPrice = (price: number) => {
-    if (listingMode === 'rent') return `Br ${price.toLocaleString()}`
-    if (price >= 1_000_000) return `Br ${(price / 1_000_000).toFixed(1)}M`
-    return `Br ${(price / 1_000).toFixed(0)}K`
-  }
+  const formatPrice = (price: number) =>
+    listingMode === 'rent' ? formatETB(price) : formatETBCompact(price)
 
   return (
     <Map
       ref={mapRef}
-      initialViewState={{ longitude: 38.7578, latitude: 9.0320, zoom: 12 }}
+      initialViewState={flyTo
+        ? { longitude: flyTo.lng, latitude: flyTo.lat, zoom: flyTo.zoom }
+        : { longitude: 38.7578, latitude: 9.0320, zoom: 12 }}
       style={{ width: '100%', height: '100%' }}
       mapStyle={satellite ? 'mapbox://styles/mapbox/satellite-streets-v12' : 'mapbox://styles/mapbox/streets-v12'}
       mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN}
@@ -128,7 +128,7 @@ export default function MapView({ properties, onPropertyClick, hoveredPropertyId
             />
             <div className="p-2.5">
               <div className="bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-base font-bold text-transparent">
-                ${getDisplayPrice(popupProperty).toLocaleString()}
+                {formatPrice(getDisplayPrice(popupProperty))}
                 {listingMode === 'rent' ? '/mo' : ''}
               </div>
               <div className="mt-0.5 text-xs text-gray-600">

@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Search, SlidersHorizontal, X, Home, Key, User, Menu, Heart, Settings, Tag, UserPlus, Mail, TrendingUp, MapPin, Loader2, ChevronRight, ArrowLeft, LogOut } from 'lucide-react';
+import { filterLocalPlaces } from '@/app/data/places';
 
 interface FilterPanelProps {
   filters: {
@@ -50,6 +51,7 @@ function zoomForType(types: string[]): number {
   if (types.includes('neighborhood') || types.includes('locality')) return 13;
   if (types.includes('postcode')) return 13;
   if (types.includes('place')) return 11;
+  if (types.includes('region')) return 8;
   return 12;
 }
 
@@ -84,6 +86,13 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
 
   const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? '';
 
+  const mergedSuggestions = useMemo(() => {
+    const local = filterLocalPlaces(inputValue);
+    const localNames = new Set(local.map(p => p.text.toLowerCase()));
+    const remote = suggestions.filter(s => !localNames.has(s.text.toLowerCase()));
+    return [...local, ...remote];
+  }, [inputValue, suggestions]);
+
   useEffect(() => {
     if (!user || !WORKER_URL) { setIsAgent(false); setIsAgentChecked(false); return }
     user.getIdToken().then(token =>
@@ -99,38 +108,38 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
   const buyPriceOptions = {
     min: [
       { label: 'Min Price', value: '' },
-      { label: 'Br 5M', value: '5000000' },
-      { label: 'Br 10M', value: '10000000' },
-      { label: 'Br 15M', value: '15000000' },
-      { label: 'Br 25M', value: '25000000' },
-      { label: 'Br 40M', value: '40000000' },
+      { label: 'ETB 5M', value: '5000000' },
+      { label: 'ETB 10M', value: '10000000' },
+      { label: 'ETB 15M', value: '15000000' },
+      { label: 'ETB 25M', value: '25000000' },
+      { label: 'ETB 40M', value: '40000000' },
     ],
     max: [
       { label: 'Max Price', value: '' },
-      { label: 'Br 15M', value: '15000000' },
-      { label: 'Br 25M', value: '25000000' },
-      { label: 'Br 40M', value: '40000000' },
-      { label: 'Br 60M', value: '60000000' },
-      { label: 'Br 100M', value: '100000000' },
+      { label: 'ETB 15M', value: '15000000' },
+      { label: 'ETB 25M', value: '25000000' },
+      { label: 'ETB 40M', value: '40000000' },
+      { label: 'ETB 60M', value: '60000000' },
+      { label: 'ETB 100M', value: '100000000' },
     ],
   };
 
   const rentPriceOptions = {
     min: [
       { label: 'Min Rent', value: '' },
-      { label: 'Br 15,000', value: '15000' },
-      { label: 'Br 25,000', value: '25000' },
-      { label: 'Br 40,000', value: '40000' },
-      { label: 'Br 70,000', value: '70000' },
-      { label: 'Br 100,000', value: '100000' },
+      { label: 'ETB 15,000', value: '15000' },
+      { label: 'ETB 25,000', value: '25000' },
+      { label: 'ETB 40,000', value: '40000' },
+      { label: 'ETB 70,000', value: '70000' },
+      { label: 'ETB 100,000', value: '100000' },
     ],
     max: [
       { label: 'Max Rent', value: '' },
-      { label: 'Br 40,000', value: '40000' },
-      { label: 'Br 75,000', value: '75000' },
-      { label: 'Br 120,000', value: '120000' },
-      { label: 'Br 200,000', value: '200000' },
-      { label: 'Br 300,000', value: '300000' },
+      { label: 'ETB 40,000', value: '40000' },
+      { label: 'ETB 75,000', value: '75000' },
+      { label: 'ETB 120,000', value: '120000' },
+      { label: 'ETB 200,000', value: '200000' },
+      { label: 'ETB 300,000', value: '300000' },
     ],
   };
 
@@ -159,10 +168,25 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
       try {
         const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
         const res = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${token}&country=et&types=place,neighborhood,postcode,address,locality&limit=5`
+          `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(q)}&access_token=${token}&country=et&types=region,place,neighborhood,postcode,address&limit=5&proximity=38.7578,9.0320`
         );
         const data = await res.json();
-        setSuggestions(data.features || []);
+        setSuggestions(
+          (data.features || []).map((f: { id: string; geometry: { coordinates: [number, number] }; properties: { name: string; feature_type: string; context?: { place?: { name: string }; country?: { name: string } } } }) => {
+            const type = f.properties.feature_type;
+            const country = f.properties.context?.country?.name ?? 'Ethiopia';
+            const placeName = type === 'region'
+              ? country
+              : `${f.properties.name}, ${country}`;
+            return {
+              id: f.id,
+              text: f.properties.name,
+              place_name: placeName,
+              center: f.geometry.coordinates,
+              place_type: [type],
+            };
+          })
+        );
       } catch {
         setSuggestions([]);
       } finally {
@@ -550,7 +574,7 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && suggestions.length > 0) selectSuggestion(suggestions[0]);
+                    if (e.key === 'Enter' && mergedSuggestions.length > 0) selectSuggestion(mergedSuggestions[0]);
                     if (e.key === 'Escape') setShowSearchModal(false);
                   }}
                   placeholder="Search by city, address, or ZIP..."
@@ -564,10 +588,10 @@ export default function FilterPanel({ filters, searchQuery, onSearchChange, onLo
                 )}
               </div>
 
-              {/* Suggestions from Mapbox */}
-              {suggestions.length > 0 && (
+              {/* Suggestions */}
+              {mergedSuggestions.length > 0 && (
                 <div className="space-y-1 mb-4">
-                  {suggestions.map((feature) => (
+                  {mergedSuggestions.map((feature) => (
                     <button
                       key={feature.id}
                       onClick={() => selectSuggestion(feature)}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle, LogIn, MapPin, CheckCircle2, Home, BedDouble, Bath, Ruler, Edit2, Upload, X, Eye, Heart } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import SignInModal from './SignInModal'
+import { formatETB } from '@/app/components/ui/utils'
 
 const AMENITIES = [
   'Parking', 'Laundry', 'Pet Friendly', 'Generator',
@@ -214,8 +215,9 @@ export default function ListRentView() {
     if (form.areaSqm && (parseFloat(form.areaSqm) <= 0 || parseFloat(form.areaSqm) > 50_000)) return 'Area must be between 1 and 50,000 m².'
     if (form.description.length > 2000) return 'Description must be 2,000 characters or less.'
     if (form.landmark.length > 200) return 'Landmark must be 200 characters or less.'
-    if (lat && (parseFloat(lat) < -90 || parseFloat(lat) > 90)) return 'Latitude must be between -90 and 90.'
-    if (lng && (parseFloat(lng) < -180 || parseFloat(lng) > 180)) return 'Longitude must be between -180 and 180.'
+    if (!lat || !lng) return 'GPS coordinates are required. Use the "Use my location" button or enter them manually.'
+    if (parseFloat(lat) < -90 || parseFloat(lat) > 90) return 'Latitude must be between -90 and 90.'
+    if (parseFloat(lng) < -180 || parseFloat(lng) > 180) return 'Longitude must be between -180 and 180.'
     return null
   }
 
@@ -553,15 +555,15 @@ export default function ListRentView() {
               </div>
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium text-gray-700">GPS Coordinates <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <label className="text-sm font-medium text-gray-700">GPS Coordinates <span className="text-red-500">*</span></label>
                   <button type="button" onClick={detectLocation} disabled={locating} className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50 transition-all">
                     {locating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
                     {locating ? 'Detecting…' : 'Use my location'}
                   </button>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <input type="text" value={lat} onChange={e => setLat(e.target.value)} placeholder="Latitude  e.g. 9.005401" className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 text-sm font-mono" />
-                  <input type="text" value={lng} onChange={e => setLng(e.target.value)} placeholder="Longitude  e.g. 38.763611" className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 text-sm font-mono" />
+                  <input type="text" value={lat} onChange={e => setLat(e.target.value)} placeholder="Latitude  e.g. 9.005401" className={`w-full px-4 py-2 border-2 rounded-lg focus:outline-none focus:border-blue-500 text-sm font-mono ${!lat && submitError ? 'border-red-400' : 'border-gray-200'}`} />
+                  <input type="text" value={lng} onChange={e => setLng(e.target.value)} placeholder="Longitude  e.g. 38.763611" className={`w-full px-4 py-2 border-2 rounded-lg focus:outline-none focus:border-blue-500 text-sm font-mono ${!lng && submitError ? 'border-red-400' : 'border-gray-200'}`} />
                 </div>
               </div>
 
@@ -743,14 +745,14 @@ export default function ListRentView() {
                       {isSale ? (
                         d.salePrice != null && (
                           <div className="text-xl font-bold text-gray-900 mb-2">
-                            Br {d.salePrice.toLocaleString()}
+                            {formatETB(d.salePrice)}
                             <span className="text-sm font-normal text-gray-500 ml-1">sale price</span>
                           </div>
                         )
                       ) : (
                         d.monthlyRent != null && (
                           <div className="text-xl font-bold text-gray-900 mb-2">
-                            Br {d.monthlyRent.toLocaleString()}<span className="text-sm font-normal text-gray-500">/mo</span>
+                            {formatETB(d.monthlyRent)}<span className="text-sm font-normal text-gray-500">/mo</span>
                           </div>
                         )
                       )}

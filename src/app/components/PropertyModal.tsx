@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Bed, Bath, Maximize, ChevronLeft, ChevronRight, Mail, Phone } from 'lucide-react';
 import { type Property } from '@/app/data/properties';
 import { useAuth } from '@/lib/auth-context';
+import { formatETB } from '@/app/components/ui/utils';
 
 interface PropertyModalProps {
   property: Property | null;
@@ -100,7 +101,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
             <div className="flex-shrink-0 bg-white/95 backdrop-blur-md border-b border-gray-200 flex items-center justify-between p-4 lg:p-6 z-10 shadow-sm">
               <div className="flex-1 min-w-0">
                 <h2 className="text-2xl lg:text-4xl font-bold truncate text-black">
-                  Br {displayPrice.toLocaleString()}{priceLabel}
+                  {formatETB(displayPrice)}{priceLabel}
                 </h2>
                 <p className="text-gray-600 text-sm lg:text-base truncate font-medium mt-1">
                   {[property.address, property.subCity, property.city].filter(Boolean).join(', ')}

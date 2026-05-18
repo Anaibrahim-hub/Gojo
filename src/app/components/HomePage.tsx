@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, User, TrendingUp, Home, Key, MessageCircle, ChevronRight, X, Menu, Heart, Settings, Tag, UserPlus, LogOut, MapPin, Loader2, Mail, Share2, Check } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -8,6 +8,8 @@ import { useFavorites } from '@/lib/favorites-context';
 import { useListings } from '@/lib/listings-context';
 import { type Property, apiListingToProperty } from '@/app/data/properties';
 import SignInModal from './SignInModal';
+import { formatETBCompact, formatETB } from '@/app/components/ui/utils';
+import { filterLocalPlaces } from '@/app/data/places';
 
 const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
 
@@ -49,6 +51,7 @@ function zoomForType(types: string[]): number {
   if (types.includes('neighborhood') || types.includes('locality')) return 13;
   if (types.includes('postcode')) return 13;
   if (types.includes('place')) return 11;
+  if (types.includes('region')) return 8;
   return 12;
 }
 
@@ -144,10 +147,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
     return () => { document.body.style.overflow = prev; };
   }, [showMenu]);
 
-  const formatPrice = (price: number) => {
-    if (price >= 1_000_000) return 'Br ' + (price / 1_000_000).toFixed(1) + 'M';
-    return 'Br ' + (price / 1_000).toFixed(0) + 'K';
-  };
+  const formatPrice = (price: number) => formatETBCompact(price);
 
   useEffect(() => {
     const q = inputValue.trim();
@@ -157,10 +157,25 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       try {
         const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
         const res = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${token}&country=et&types=place,neighborhood,postcode,address,locality&limit=5`
+          `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(q)}&access_token=${token}&country=et&types=region,place,neighborhood,postcode,address&limit=5&proximity=38.7578,9.0320`
         );
         const data = await res.json();
-        setSuggestions(data.features || []);
+        setSuggestions(
+          (data.features || []).map((f: { id: string; geometry: { coordinates: [number, number] }; properties: { name: string; feature_type: string; context?: { place?: { name: string }; country?: { name: string } } } }) => {
+            const type = f.properties.feature_type;
+            const country = f.properties.context?.country?.name ?? 'Ethiopia';
+            const placeName = type === 'region'
+              ? country
+              : `${f.properties.name}, ${country}`;
+            return {
+              id: f.id,
+              text: f.properties.name,
+              place_name: placeName,
+              center: f.geometry.coordinates,
+              place_type: [type],
+            };
+          })
+        );
       } catch { setSuggestions([]); }
       finally { setIsLoading(false); }
     }, 300);
@@ -180,6 +195,13 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       setMyListing(first ? apiListingToProperty(first) : null)
     }).catch(() => { setMyListing(null); setIsAgentChecked(true) })
   }, [user])
+
+  const mergedSuggestions = useMemo(() => {
+    const local = filterLocalPlaces(inputValue);
+    const localNames = new Set(local.map(p => p.text.toLowerCase()));
+    const remote = suggestions.filter(s => !localNames.has(s.text.toLowerCase()));
+    return [...local, ...remote];
+  }, [inputValue, suggestions]);
 
   async function handleAgentFormSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -441,7 +463,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                     </div>
                     <div className="absolute bottom-2 lg:bottom-3 left-2 lg:left-3 right-2 lg:right-3">
                       <div className="text-white text-xl lg:text-2xl font-bold">
-                        {property.type === 'rent' ? `Br ${property.rent.toLocaleString()}/mo` : formatPrice(property.price)}
+                        {property.type === 'rent' ? `${formatETB(property.rent)}/mo` : formatPrice(property.price)}
                       </div>
                       <div className="text-white/90 text-xs lg:text-sm">{[property.subCity, property.city].filter(Boolean).join(', ')}</div>
                     </div>
@@ -540,7 +562,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                   </div>
                   <div className="p-4 lg:p-5">
                     <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
-                      Br {property.rent.toLocaleString()}/mo
+                      {formatETB(property.rent)}/mo
                     </div>
                     <div className="flex items-center gap-2 lg:gap-3 text-gray-600 mb-2 text-xs lg:text-sm">
                       <span>{property.beds} {'bd'}</span>
@@ -719,7 +741,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                   </div>
                   <div className="p-4 lg:p-5">
                     <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
-                      {property.type === 'rent' ? `Br ${property.rent.toLocaleString()}/mo` : formatPrice(property.price)}
+                      {property.type === 'rent' ? `${formatETB(property.rent)}/mo` : formatPrice(property.price)}
                     </div>
                     <div className="flex items-center gap-2 lg:gap-3 text-gray-600 mb-2 text-xs lg:text-sm">
                       <span>{property.beds} bd</span>
@@ -778,7 +800,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                 </button>
                 <div className="absolute bottom-2 lg:bottom-3 left-2 lg:left-3 right-2 lg:right-3">
                   <div className="text-white text-xl lg:text-2xl font-bold">
-                    Br {myListing.rent.toLocaleString()}/mo
+                    {formatETB(myListing.rent)}/mo
                   </div>
                   <div className="text-white/90 text-xs lg:text-sm">{[myListing.subCity, myListing.city].filter(Boolean).join(', ')}</div>
                 </div>
@@ -985,7 +1007,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && suggestions.length > 0) selectSuggestion(suggestions[0]);
+                    if (e.key === 'Enter' && mergedSuggestions.length > 0) selectSuggestion(mergedSuggestions[0]);
                     if (e.key === 'Escape') setShowSearchModal(false);
                   }}
                   placeholder="Search by city, address, or ZIP..."
@@ -1000,9 +1022,9 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
               </div>
 
               {/* Suggestions */}
-              {suggestions.length > 0 && (
+              {mergedSuggestions.length > 0 && (
                 <div className="space-y-1 mb-4">
-                  {suggestions.map((feature) => (
+                  {mergedSuggestions.map((feature) => (
                     <button key={feature.id} onClick={() => selectSuggestion(feature)} className="w-full flex items-start gap-3 p-3 hover:bg-blue-50 rounded-xl transition-all text-left">
                       <MapPin className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
                       <div className="min-w-0">
