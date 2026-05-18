@@ -3,25 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Map, { Marker, Popup, NavigationControl, FullscreenControl } from 'react-map-gl/mapbox'
 import type { MapRef } from 'react-map-gl/mapbox'
-
-interface Property {
-  id: number
-  price: number
-  rent: number
-  address: string
-  city: string
-  state: string
-  zip: string
-  beds: number
-  baths: number
-  sqft: number
-  status: 'active' | 'pending' | 'new'
-  image: string
-  lat: number
-  lng: number
-  type: 'sale' | 'rent' | 'both'
-  propertyType: string
-}
+import type { Property } from '@/app/data/properties'
 
 interface MapViewProps {
   properties: Property[]
@@ -87,15 +69,15 @@ export default function MapView({ properties, onPropertyClick, hoveredPropertyId
         </div>
       </div>
 
-      {properties.map((property) => {
+      {properties.filter(p => p.lat !== null && p.lng !== null).map((property) => {
         const isHovered = hoveredPropertyId === property.id
         const displayPrice = getDisplayPrice(property)
 
         return (
           <Marker
             key={property.id}
-            longitude={property.lng}
-            latitude={property.lat}
+            longitude={property.lng!}
+            latitude={property.lat!}
             anchor="bottom"
             style={{ zIndex: isHovered ? 10 : 1 }}
           >
@@ -125,7 +107,7 @@ export default function MapView({ properties, onPropertyClick, hoveredPropertyId
         )
       })}
 
-      {popupProperty && (
+      {popupProperty && popupProperty.lat !== null && popupProperty.lng !== null && (
         <Popup
           longitude={popupProperty.lng}
           latitude={popupProperty.lat}

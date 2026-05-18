@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import '../styles/index.css'
 import { AuthProvider } from '@/lib/auth-context'
 import { FavoritesProvider } from '@/lib/favorites-context'
+import { ListingsProvider } from '@/lib/listings-context'
 
 export const metadata: Metadata = {
   title: 'Yevilla — Find Homes for Sale & Rent in Ethiopia',
@@ -20,7 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body style={{ height: '100%', margin: 0 }}>
-        <AuthProvider><FavoritesProvider>{children}</FavoritesProvider></AuthProvider>
+        <AuthProvider><ListingsProvider><FavoritesProvider>{children}</FavoritesProvider></ListingsProvider></AuthProvider>
       </body>
     </html>
   )

@@ -4,39 +4,25 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Heart, Home, Key, Map, List, ChevronDown, Loader2 } from 'lucide-react'
 import { useFavorites } from '@/lib/favorites-context'
-import { apiListingToProperty, type Property } from '@/app/data/properties'
+import { type Property } from '@/app/data/properties'
+import { useListings } from '@/lib/listings-context'
 import MapView from './MapView'
 import PropertyCard from './PropertyCard'
 import PropertyModal from './PropertyModal'
 
-const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
-
 export default function FavoritesView() {
   const router = useRouter()
   const { favorites } = useFavorites()
+  const { listings: apiListings, loading: loadingListings } = useListings()
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [hoveredPropertyId, setHoveredPropertyId] = useState<number | null>(null)
   const [listingMode, setListingMode] = useState<'buy' | 'rent'>('buy')
   const [mobileView, setMobileView] = useState<'map' | 'list'>('list')
   const [sortBy, setSortBy] = useState<'recommended' | 'price-low' | 'price-high' | 'beds' | 'baths' | 'sqft'>('recommended')
-  const [apiListings, setApiListings] = useState<Property[]>([])
-  const [loadingListings, setLoadingListings] = useState(true)
 
   useEffect(() => {
     if (mobileView === 'map') window.dispatchEvent(new Event('resize'))
   }, [mobileView])
-
-  useEffect(() => {
-    if (!WORKER_URL) { setLoadingListings(false); return }
-    fetch(`${WORKER_URL}/listings`)
-      .then(async res => {
-        if (!res.ok) return
-        const data = await res.json() as Record<string, unknown>[]
-        setApiListings(data.map(apiListingToProperty))
-      })
-      .catch(() => {})
-      .finally(() => setLoadingListings(false))
-  }, [])
 
   const favoriteProperties = apiListings.filter((p) => favorites.has(p.id))
 

@@ -6,7 +6,17 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "cf:build": "CF_BUILD=1 next build",
+    "cf:preview": "CF_BUILD=1 next build && wrangler pages dev out",
+    "cf:deploy": "CF_BUILD=1 next build && wrangler pages deploy out --project-name=yevilla",
+    "worker:dev": "wrangler dev --config worker/wrangler.toml",
+    "worker:deploy": "wrangler deploy --config worker/wrangler.toml",
+    "worker:r2:create": "wrangler r2 bucket create gojo-listings",
+    "worker:r2:cors": "wrangler r2 bucket cors put gojo-listings --file worker/r2-cors.json",
+    "d1:create": "wrangler d1 create gojo-listings-db",
+    "d1:migrate": "wrangler d1 execute gojo-listings-db --remote --config worker/wrangler.toml --file worker/migrations/0001_init.sql && wrangler d1 execute gojo-listings-db --remote --config worker/wrangler.toml --file worker/migrations/0002_favorites.sql && wrangler d1 execute gojo-listings-db --remote --config worker/wrangler.toml --file worker/migrations/0003_listing_stats.sql && wrangler d1 execute gojo-listings-db --remote --config worker/wrangler.toml --file worker/migrations/0004_contact_info.sql && wrangler d1 execute gojo-listings-db --remote --config worker/wrangler.toml --file worker/migrations/0005_agent_support.sql",
+    "d1:migrate:local": "wrangler d1 execute gojo-listings-db --local --file worker/migrations/0001_init.sql --config worker/wrangler.toml && wrangler d1 execute gojo-listings-db --local --file worker/migrations/0002_favorites.sql --config worker/wrangler.toml && wrangler d1 execute gojo-listings-db --local --file worker/migrations/0003_listing_stats.sql --config worker/wrangler.toml && wrangler d1 execute gojo-listings-db --local --file worker/migrations/0004_contact_info.sql --config worker/wrangler.toml && wrangler d1 execute gojo-listings-db --local --file worker/migrations/0005_agent_support.sql --config worker/wrangler.toml"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -72,13 +82,15 @@
     "vaul": "1.1.2"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260510.1",
     "@tailwindcss/postcss": "^4.2.4",
     "@types/leaflet": "^1.9.21",
     "@types/node": "^25.6.0",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
     "tailwindcss": "4.1.12",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "wrangler": "^4.90.0"
   },
   "peerDependencies": {
     "react": "18.3.1",
@@ -95,6 +107,12 @@
   "pnpm": {
     "overrides": {
       "vite": "6.3.5"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@tailwindcss/oxide",
+      "esbuild",
+      "sharp",
+      "workerd"
+    ]
   }
 }

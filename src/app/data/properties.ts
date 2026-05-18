@@ -74,6 +74,7 @@ export interface Property {
   availableFrom?: string | null
   description?: string
   amenities?: string[]
+  createdAt?: number
 }
 
 // Stable numeric ID from a Firebase UID (offset avoids colliding with mock IDs 1–9)
@@ -90,9 +91,7 @@ export function apiListingToProperty(d: Record<string, unknown>): Property {
     firestoreId: d.id as string,
     price: (d.salePrice as number) ?? 0,
     rent: (d.monthlyRent as number) ?? 0,
-    address: (d.landmark as string) ||
-      [(d.subCity as string), (d.woreda as string)].filter(Boolean).join(', ') ||
-      (d.city as string) || '',
+    address: (d.landmark as string) || (d.woreda as string) || '',
     city: (d.city as string) ?? '',
     state: '',
     zip: '',
@@ -118,6 +117,7 @@ export function apiListingToProperty(d: Record<string, unknown>): Property {
     availableFrom: (d.availableFrom as string | null) ?? null,
     description: (d.description as string) ?? undefined,
     amenities: (d.amenities as string[]) ?? [],
+    createdAt: (d.createdAt as number) ?? undefined,
   }
 }
 

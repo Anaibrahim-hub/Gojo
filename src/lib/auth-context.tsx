@@ -10,15 +10,18 @@ import {
   signInWithEmailLink,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  updateProfile,
 } from 'firebase/auth'
 import { auth } from './firebase'
 
 interface AuthContextType {
   user: User | null
   loading: boolean
+  photoURL: string | null
   signInWithGoogle: () => Promise<void>
   sendEmailLink: (email: string) => Promise<void>
   signOut: () => Promise<void>
+  updateUserPhoto: (url: string | null) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -26,6 +29,7 @@ const AuthContext = createContext<AuthContextType | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [photoURL, setPhotoURL] = useState<string | null>(null)
 
   useEffect(() => {
     if (isSignInWithEmailLink(auth, window.location.href)) {
@@ -42,6 +46,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u)
+      // Only use photos the user explicitly uploaded (R2). Ignore Google/OAuth provider
+      // photos — they require referrer tricks and CSP allowances that are fragile.
+      const url = u?.photoURL ?? null
+      const isThirdParty = url && (
+        url.includes('googleusercontent.com') ||
+        url.includes('graph.facebook.com') ||
+        url.includes('twimg.com')
+      )
+      setPhotoURL(isThirdParty ? null : url)
       setLoading(false)
     })
     return unsubscribe
@@ -64,8 +77,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await firebaseSignOut(auth)
   }
 
+  const updateUserPhoto = async (url: string | null) => {
+    if (!auth.currentUser) return
+    await updateProfile(auth.currentUser, { photoURL: url })
+    setPhotoURL(url)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, sendEmailLink, signOut }}>
+    <AuthContext.Provider value={{ user, loading, photoURL, signInWithGoogle, sendEmailLink, signOut, updateUserPhoto }}>
       {children}
     </AuthContext.Provider>
   )

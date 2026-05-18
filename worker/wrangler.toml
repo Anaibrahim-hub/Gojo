@@ -1,0 +1,26 @@
+name = "gojo-upload"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "RATE_LIMITER"
+id = "87c884a2501a434c8221a9816e7493af"
+preview_id = "55aac3737b544fd6bc7b756f5db5d1fe"
+
+[[r2_buckets]]
+binding = "GOJO_LISTINGS"
+bucket_name = "gojo-listings"
+
+# Run `wrangler d1 create gojo-listings-db` once, then paste the returned
+# database_id below and run `pnpm d1:migrate` to create the schema.
+[[d1_databases]]
+binding = "DB"
+database_name = "gojo-listings-db"
+database_id = "991dc13e-0bdc-407d-8707-0ef22cecf96b"
+
+[vars]
+FIREBASE_PROJECT_ID = "gojo-9e529"
+ALLOWED_ORIGIN = "https://yevilla.com"
+# R2_PUBLIC_URL: set via `wrangler secret put R2_PUBLIC_URL` or in the CF dashboard
+# Format: https://pub-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.r2.dev

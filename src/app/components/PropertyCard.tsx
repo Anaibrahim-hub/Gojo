@@ -2,6 +2,20 @@ import React, { useState } from 'react';
 import { Bed, Bath, Maximize, Heart, ChevronLeft, ChevronRight, Share2, Check } from 'lucide-react';
 import { useFavorites } from '@/lib/favorites-context';
 
+function getNewBadgeLabel(createdAt?: number): string | null {
+  if (!createdAt) return null;
+  const diffMs = Date.now() - createdAt;
+  const diffHrs = diffMs / (1000 * 60 * 60);
+  if (diffHrs < 1) return 'New just now';
+  if (diffHrs < 24) {
+    const h = Math.floor(diffHrs);
+    return `New ${h} ${h === 1 ? 'hr' : 'hrs'} ago`;
+  }
+  const diffDays = Math.floor(diffHrs / 24);
+  if (diffDays <= 7) return `New ${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
+  return null;
+}
+
 interface PropertyCardProps {
   property: {
     id: number;
@@ -20,6 +34,8 @@ interface PropertyCardProps {
     lat: number;
     lng: number;
     type: 'sale' | 'rent' | 'both';
+    createdAt?: number;
+    subCity?: string;
   };
   onClick: () => void;
   isHovered: boolean;
@@ -119,6 +135,8 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
     setTouchEnd(0);
   };
 
+  const newBadgeLabel = getNewBadgeLabel(property.createdAt);
+
   return (
     <div
       className={`bg-white rounded-xl overflow-hidden transition-all duration-300 cursor-pointer group ${
@@ -141,7 +159,13 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
-        <div className="absolute top-3 right-3 flex flex-col gap-2 z-10">
+        {newBadgeLabel && (
+          <span className="absolute top-3 left-3 z-10 bg-green-800 text-white text-xs font-semibold px-2.5 py-1 rounded-full shadow-lg">
+            {newBadgeLabel}
+          </span>
+        )}
+
+        <div className="absolute top-3 right-3 flex flex-col items-end gap-2 z-10">
           <button
             onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
             className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
@@ -209,9 +233,11 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
             <span className="font-medium">{property.sqft.toLocaleString()} sqft</span>
           </div>
         </div>
-        <div className="font-medium text-gray-800 text-sm lg:text-base mb-1">{property.address}</div>
+        {property.address && (
+          <div className="font-medium text-gray-800 text-sm lg:text-base mb-1">{property.address}</div>
+        )}
         <div className="text-gray-500 text-xs lg:text-sm">
-          {property.city}, {property.state} {property.zip}
+          {[property.subCity, property.city].filter(Boolean).join(', ')}
         </div>
       </div>
     </div>

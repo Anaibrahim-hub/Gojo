@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /listings/{listingId} {
+      // Anyone can read listings (public browsing)
+      allow read: if true;
+
+      // Document ID must equal the user's UID — enforces exactly 1 listing per user
+      allow create: if request.auth != null
+                    && listingId == request.auth.uid
+                    && request.resource.data.ownerId == request.auth.uid;
+
+      // Only the owner can edit or delete their listing
+      allow update, delete: if request.auth != null
+                             && listingId == request.auth.uid;
+    }
+  }
+}

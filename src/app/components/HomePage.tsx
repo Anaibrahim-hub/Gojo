@@ -5,52 +5,11 @@ import { Search, User, TrendingUp, Home, Key, MessageCircle, ChevronRight, X, Me
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useFavorites } from '@/lib/favorites-context';
-import { type Property } from '@/app/data/properties';
+import { useListings } from '@/lib/listings-context';
+import { type Property, apiListingToProperty } from '@/app/data/properties';
 import SignInModal from './SignInModal';
 
 const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
-
-function uidToNumId(uid: string): number {
-  let h = 0
-  for (let i = 0; i < uid.length; i++) h = (Math.imul(31, h) + uid.charCodeAt(i)) | 0
-  return Math.abs(h) + 1000
-}
-
-function apiListingToProperty(d: Record<string, unknown>): Property {
-  const photos = (d.photos as { url: string }[] | undefined) ?? []
-  return {
-    id: uidToNumId(d.id as string),
-    firestoreId: d.id as string,
-    price: 0,
-    rent: (d.monthlyRent as number) ?? 0,
-    address: (d.landmark as string) || (d.woreda as string) || '',
-    city: (d.city as string) ?? '',
-    state: '',
-    zip: '',
-    beds: (d.bedrooms as number) ?? 0,
-    baths: (d.bathrooms as number) ?? 0,
-    sqft: (d.areaSqm as number) ?? 0,
-    status: (d.status as string) === 'published' ? 'active' : 'pending',
-    image: photos[0]?.url ?? 'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=800',
-    photos: photos.map(p => p.url),
-    lat: (d.lat as number | null) ?? null,
-    lng: (d.lng as number | null) ?? null,
-    type: 'rent',
-    propertyType: (d.propertyType as string) ?? '',
-    furnished: ((d.amenities as string[] | undefined) ?? []).includes('Furnished'),
-    ownerDisplayName: (d.ownerDisplayName as string) ?? undefined,
-    ownerPhotoURL: (d.ownerPhotoURL as string) ?? undefined,
-    ownerEmail: (d.ownerEmail as string) ?? undefined,
-    subCity: (d.subCity as string) ?? undefined,
-    woreda: (d.woreda as string) ?? undefined,
-    kebele: (d.kebele as string) ?? undefined,
-    landmark: (d.landmark as string) ?? undefined,
-    availableFrom: (d.availableFrom as string | null) ?? null,
-    description: (d.description as string) ?? undefined,
-    amenities: (d.amenities as string[]) ?? [],
-    createdAt: (d.createdAt as number) ?? undefined,
-  }
-}
 
 function getNewBadgeLabel(createdAt?: number): string | null {
   if (!createdAt) return null;
@@ -107,6 +66,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
   const router = useRouter();
   const { user, photoURL, signOut, loading } = useAuth();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const { listings: apiListings, loading: loadingListings } = useListings();
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -120,8 +80,6 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
   const [suggestions, setSuggestions] = useState<GeocodingFeature[]>([]);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [apiListings, setApiListings] = useState<Property[]>([]);
-  const [loadingListings, setLoadingListings] = useState(true);
   const [myListing, setMyListing] = useState<Property | null>(null);
   const [isAgent, setIsAgent] = useState(false);
   const [isAgentChecked, setIsAgentChecked] = useState(false);
@@ -208,18 +166,6 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
     }, 300);
     return () => clearTimeout(timer);
   }, [inputValue]);
-
-  useEffect(() => {
-    if (!WORKER_URL) { setLoadingListings(false); return }
-    fetch(`${WORKER_URL}/listings`)
-      .then(async res => {
-        if (!res.ok) return
-        const data = await res.json() as Record<string, unknown>[]
-        setApiListings(data.map(apiListingToProperty).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)))
-      })
-      .catch(() => {/* Worker unavailable */})
-      .finally(() => setLoadingListings(false))
-  }, [])
 
   useEffect(() => {
     if (!user || !WORKER_URL) { setMyListing(null); setIsAgent(false); setIsAgentChecked(false); return }

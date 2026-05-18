@@ -145,6 +145,7 @@ export default {
       if (pathname === '/favorites') {
         if (request.method === 'GET') return await handleGetFavorites(request, env, origin)
         if (request.method === 'PUT') return await handleSetFavorites(request, env, origin)
+        if (request.method === 'PATCH') return await handlePatchFavorite(request, env, origin)
       }
       if (pathname === '/contact' && request.method === 'GET') {
         return await handleGetContact(request, env, origin)
@@ -204,13 +205,27 @@ async function handleGetAllListings(request: Request, env: Env, origin: string):
     return jsonErr(429, 'Too many requests — please slow down', origin, env)
   }
 
+  const url = new URL(request.url)
+  const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10))
+  const limit = 100
+  const offset = (page - 1) * limit
+
   const [{ results }, agentsResult] = await Promise.all([
-    env.DB.prepare('SELECT * FROM listings WHERE status = ?').bind('published').all<ListingRow>(),
+    env.DB.prepare('SELECT * FROM listings WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?')
+      .bind('published', limit + 1, offset).all<ListingRow>(),
     env.DB.prepare('SELECT uid FROM agents').all<{ uid: string }>(),
   ])
   const agentUids = new Set(agentsResult.results.map(r => r.uid))
+  const hasMore = results.length > limit
+  const pageResults = hasMore ? results.slice(0, limit) : results
 
-  return json(results.map(r => ({ ...rowToListing(r, true), isAgent: agentUids.has(r.owner_id) })), 200, origin, env)
+  const h = corsHeaders(origin, env)
+  h.set('Content-Type', 'application/json')
+  h.set('Cache-Control', 'public, max-age=60, s-maxage=60, stale-while-revalidate=30')
+  return new Response(JSON.stringify({
+    listings: pageResults.map(r => ({ ...rowToListing(r, true), isAgent: agentUids.has(r.owner_id) })),
+    hasMore,
+  }), { status: 200, headers: h })
 }
 
 // ── Listing: GET own (authenticated) ─────────────────────────────────────────
@@ -229,11 +244,18 @@ async function handleGetListing(request: Request, env: Env, origin: string): Pro
     isAgent(uid, env),
   ])
 
-  const listings = await Promise.all(results.map(async r => {
-    const likeResult = await env.DB.prepare(
-      'SELECT COUNT(*) as count FROM favorites WHERE property_id = ?'
-    ).bind(uidToNumId(r.id)).first<{ count: number }>()
-    return { ...rowToListing(r, true), likeCount: likeResult?.count ?? 0 }
+  const numIds = results.map(r => uidToNumId(r.id))
+  let likeMap = new Map<number, number>()
+  if (numIds.length > 0) {
+    const placeholders = numIds.map(() => '?').join(',')
+    const { results: likeCounts } = await env.DB.prepare(
+      `SELECT property_id, COUNT(*) as cnt FROM favorites WHERE property_id IN (${placeholders}) GROUP BY property_id`
+    ).bind(...numIds).all<{ property_id: number; cnt: number }>()
+    likeMap = new Map(likeCounts.map(r => [r.property_id, r.cnt]))
+  }
+  const listings = results.map(r => ({
+    ...rowToListing(r, true),
+    likeCount: likeMap.get(uidToNumId(r.id)) ?? 0,
   }))
 
   return json({ listings, isAgent: agent }, 200, origin, env)
@@ -643,6 +665,43 @@ async function handleSetFavorites(request: Request, env: Env, origin: string): P
   return json({ ids }, 200, origin, env)
 }
 
+// ── Favorites: PATCH (add / remove single item) ───────────────────────────────
+
+async function handlePatchFavorite(request: Request, env: Env, origin: string): Promise<Response> {
+  const uid = await authenticate(request, env)
+  if (!uid) return jsonErr(401, 'Unauthorized', origin, env)
+
+  if (!await rateLimit(env, `write:${uid}`, RATE_LIMITS.write)) {
+    return jsonErr(429, 'Too many requests', origin, env)
+  }
+
+  let body: { action: unknown; id: unknown }
+  try {
+    body = await request.json() as { action: unknown; id: unknown }
+  } catch {
+    return jsonErr(400, 'Invalid JSON', origin, env)
+  }
+
+  if (body.action !== 'add' && body.action !== 'remove') {
+    return jsonErr(400, 'action must be "add" or "remove"', origin, env)
+  }
+  if (typeof body.id !== 'number' || !Number.isInteger(body.id)) {
+    return jsonErr(400, 'id must be an integer', origin, env)
+  }
+
+  if (body.action === 'add') {
+    await env.DB.prepare(
+      'INSERT OR IGNORE INTO favorites (user_id, property_id) VALUES (?, ?)'
+    ).bind(uid, body.id).run()
+  } else {
+    await env.DB.prepare(
+      'DELETE FROM favorites WHERE user_id = ? AND property_id = ?'
+    ).bind(uid, body.id).run()
+  }
+
+  return json({ ok: true }, 200, origin, env)
+}
+
 // ── Admin: approve / reject listing ──────────────────────────────────────────
 
 async function handleApproveListing(request: Request, env: Env, origin: string): Promise<Response> {
@@ -934,11 +993,21 @@ async function handleGetContact(request: Request, env: Env, origin: string): Pro
     return jsonErr(429, 'Too many requests', origin, env)
   }
 
+  const cached = await env.RATE_LIMITER.get('contact_info')
+  if (cached) {
+    const h = corsHeaders(origin, env)
+    h.set('Content-Type', 'application/json')
+    return new Response(cached, { status: 200, headers: h })
+  }
+
   const row = await env.DB.prepare(
     'SELECT phone, email, address, office_hours FROM contact_info WHERE id = 1'
   ).first<ContactRow>()
 
-  return json(row ?? { phone: null, email: null, address: null, office_hours: null }, 200, origin, env)
+  const data = row ?? { phone: null, email: null, address: null, office_hours: null }
+  env.RATE_LIMITER.put('contact_info', JSON.stringify(data), { expirationTtl: 3600 }).catch(() => {})
+
+  return json(data, 200, origin, env)
 }
 
 // ── Firebase JWT verification ─────────────────────────────────────────────────

@@ -8,8 +8,8 @@ import FilterPanel from './FilterPanel'
 import PropertyModal from './PropertyModal'
 import SignInModal from './SignInModal'
 import { Map, List, ChevronDown, Loader2, Home } from 'lucide-react'
-import { type Property, apiListingToProperty } from '@/app/data/properties'
-const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
+import { type Property } from '@/app/data/properties'
+import { useListings } from '@/lib/listings-context'
 
 export default function ListingsView() {
   const router = useRouter()
@@ -43,8 +43,7 @@ export default function ListingsView() {
   const [listingMode, setListingMode] = useState<'buy' | 'rent'>(initialMode)
   const [sortBy, setSortBy] = useState<'recommended' | 'price-low' | 'price-high' | 'beds' | 'baths' | 'sqft'>('recommended')
   const [showSignInModal, setShowSignInModal] = useState(false)
-  const [apiListings, setApiListings] = useState<Property[]>([])
-  const [loadingListings, setLoadingListings] = useState(true)
+  const { listings: apiListings, loading: loadingListings, hasMore, loadMore, loadingMore } = useListings()
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -55,18 +54,6 @@ export default function ListingsView() {
   useEffect(() => {
     if (mobileView === 'map') window.dispatchEvent(new Event('resize'))
   }, [mobileView])
-
-  useEffect(() => {
-    if (!WORKER_URL) { setLoadingListings(false); return }
-    fetch(`${WORKER_URL}/listings`)
-      .then(async res => {
-        if (!res.ok) return
-        const data = await res.json() as Record<string, unknown>[]
-        setApiListings(data.map(apiListingToProperty))
-      })
-      .catch(() => {/* Worker unavailable — show empty state */})
-      .finally(() => setLoadingListings(false))
-  }, [])
 
   const handleFilterChange = (key: string, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }))
@@ -178,19 +165,32 @@ export default function ListingsView() {
               <p className="text-gray-400 text-sm mt-1">Try adjusting your filters or check back later</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
-              {filteredProperties.map((property) => (
-                <PropertyCard
-                  key={property.id}
-                  property={property}
-                  onClick={() => setSelectedProperty(property)}
-                  isHovered={hoveredPropertyId === property.id}
-                  onMouseEnter={() => setHoveredPropertyId(property.id)}
-                  onMouseLeave={() => setHoveredPropertyId(null)}
-                  listingMode={listingMode}
-                />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
+                {filteredProperties.map((property) => (
+                  <PropertyCard
+                    key={property.id}
+                    property={property}
+                    onClick={() => setSelectedProperty(property)}
+                    isHovered={hoveredPropertyId === property.id}
+                    onMouseEnter={() => setHoveredPropertyId(property.id)}
+                    onMouseLeave={() => setHoveredPropertyId(null)}
+                    listingMode={listingMode}
+                  />
+                ))}
+              </div>
+              {hasMore && (
+                <div className="flex justify-center mt-6">
+                  <button
+                    onClick={loadMore}
+                    disabled={loadingMore}
+                    className="flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 rounded-full shadow-md text-sm font-semibold text-gray-700 hover:border-blue-500 hover:text-blue-600 transition-all disabled:opacity-50"
+                  >
+                    {loadingMore ? <><Loader2 className="w-4 h-4 animate-spin" />Loading…</> : 'Load More'}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
