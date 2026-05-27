@@ -1,7 +1,11 @@
 'use client'
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Search, User, TrendingUp, Home, Key, MessageCircle, ChevronRight, X, Menu, Heart, Settings, Tag, UserPlus, LogOut, MapPin, Loader2, Mail, Share2, Check } from 'lucide-react';
+import {
+  Search, User, TrendingUp, Home, Key, MessageCircle, ChevronRight,
+  X, Menu, Heart, Settings, Tag, UserPlus, LogOut, MapPin, Loader2,
+  Mail, Share2, Check,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useFavorites } from '@/lib/favorites-context';
@@ -11,34 +15,14 @@ import SignInModal from './SignInModal';
 import { formatETBCompact, formatETB } from '@/app/components/ui/utils';
 import { filterLocalPlaces } from '@/app/data/places';
 
-const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
-
-function getNewBadgeLabel(createdAt?: number): string | null {
-  if (!createdAt) return null;
-  const diffHrs = (Date.now() - createdAt) / (1000 * 60 * 60);
-  if (diffHrs < 1) return 'New just now';
-  if (diffHrs < 24) { const h = Math.floor(diffHrs); return `New ${h} ${h === 1 ? 'hr' : 'hrs'} ago`; }
-  const d = Math.floor(diffHrs / 24);
-  if (d <= 7) return `New ${d} ${d === 1 ? 'day' : 'days'} ago`;
-  return null;
-}
+const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? '';
 
 interface GeocodingFeature {
-  id: string;
-  place_name: string;
-  text: string;
-  center: [number, number];
-  place_type: string[];
+  id: string; place_name: string; text: string; center: [number, number]; place_type: string[];
 }
-
 interface RecentSearch {
-  text: string;
-  placeName: string;
-  lng: number;
-  lat: number;
-  zoom: number;
+  text: string; placeName: string; lng: number; lat: number; zoom: number;
 }
-
 interface HomePageProps {
   onNavigateToMap: (mode?: 'buy' | 'rent', location?: { q: string; lat: number; lng: number; zoom: number }) => void;
   onPropertyClick: (property: Property) => void;
@@ -54,30 +38,89 @@ function zoomForType(types: string[]): number {
   if (types.includes('region')) return 8;
   return 12;
 }
-
-function loadRecent(): RecentSearch[] {
-  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; }
-}
-
+function loadRecent(): RecentSearch[] { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; } }
 function saveRecent(item: RecentSearch) {
-  const current = loadRecent();
-  const deduped = current.filter((s) => s.text !== item.text);
+  const deduped = loadRecent().filter(s => s.text !== item.text);
   localStorage.setItem(RECENT_KEY, JSON.stringify([item, ...deduped].slice(0, 5)));
 }
 
+function isNewListing(createdAt?: number): boolean {
+  if (!createdAt) return false;
+  return (Date.now() - createdAt) / (1000 * 60 * 60 * 24) <= 7;
+}
+
+// ── Shared carousel card ─────────────────────────────────────────────────────
+function PropertyCarouselCard({
+  property, onClick, isFav, onFav, isShared, onShare, priceLabel,
+}: {
+  property: Property; onClick: () => void; isFav: boolean; onFav: (e: React.MouseEvent) => void;
+  isShared: boolean; onShare: (e: React.MouseEvent) => void; priceLabel: string;
+}) {
+  const image = property.photos?.[0] ?? property.image;
+  return (
+    <div
+      className="flex-shrink-0 w-60 lg:w-72 cursor-pointer group snap-start"
+      onClick={onClick}
+    >
+      <div className="relative h-44 lg:h-52 overflow-hidden rounded-xl mb-2.5 shadow-md group-hover:shadow-xl transition-shadow duration-300">
+        <img
+          src={image}
+          alt={property.address}
+          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.06]"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+
+        {isNewListing(property.createdAt) && (
+          <span className="absolute top-2.5 left-2.5 bg-green-700 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">
+            New
+          </span>
+        )}
+
+        <div className="absolute top-2.5 right-2.5 flex gap-1.5 transition-opacity z-10 lg:opacity-0 lg:group-hover:opacity-100">
+          <button
+            onClick={onFav}
+            className="bg-white/95 backdrop-blur-sm p-1.5 rounded-full shadow-md hover:bg-white transition-all"
+          >
+            <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} />
+          </button>
+          <button
+            onClick={onShare}
+            className="bg-white/95 backdrop-blur-sm p-1.5 rounded-full shadow-md hover:bg-white transition-all"
+          >
+            {isShared ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Share2 className="w-3.5 h-3.5 text-gray-600" />}
+          </button>
+        </div>
+
+        <div className="absolute bottom-3 left-3 right-3">
+          <p className="text-white text-lg font-bold leading-none drop-shadow-sm">{priceLabel}</p>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-[13px] font-semibold text-gray-700 mb-0.5">
+          {property.beds} bd
+          <span className="text-gray-300 mx-1.5">·</span>
+          {property.baths} ba
+          {property.sqft > 0 && <><span className="text-gray-300 mx-1.5">·</span>{property.sqft.toLocaleString()} m²</>}
+        </p>
+        {property.address && <p className="text-xs text-gray-500 truncate">{property.address}</p>}
+        <p className="text-xs text-gray-400 truncate">{[property.subCity, property.city].filter(Boolean).join(', ')}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageProps) {
   const router = useRouter();
   const { user, photoURL, signOut, loading } = useAuth();
   const { isFavorite, toggleFavorite } = useFavorites();
   const { listings: apiListings, loading: loadingListings } = useListings();
+
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const userMenuRef = useRef<HTMLDivElement>(null);
-  const [recommendedIndex, setRecommendedIndex] = useState(0);
-  const [forSaleIndex, setForSaleIndex] = useState(0);
-  const [forRentIndex, setForRentIndex] = useState(0);
   const [searchListingMode, setSearchListingMode] = useState<'buy' | 'rent'>('buy');
   const [inputValue, setInputValue] = useState('');
   const [suggestions, setSuggestions] = useState<GeocodingFeature[]>([]);
@@ -87,6 +130,8 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
   const [isAgent, setIsAgent] = useState(false);
   const [isAgentChecked, setIsAgentChecked] = useState(false);
   const [sharedId, setSharedId] = useState<number | null>(null);
+  const [scrolled, setScrolled] = useState(false);
+
   const [agentLocation, setAgentLocation] = useState('');
   const [agentEmail, setAgentEmail] = useState('');
   const [agentPhone, setAgentPhone] = useState('');
@@ -95,60 +140,33 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
   const [agentSubmitted, setAgentSubmitted] = useState(false);
   const [agentError, setAgentError] = useState('');
 
-  const handleShare = async (e: React.MouseEvent, property: Property) => {
-    e.stopPropagation();
-    const url = `${window.location.origin}/listings?q=${encodeURIComponent(property.address)}`;
-    const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-    if (isMobile && navigator.share) {
-      try { await navigator.share({ title: property.address, text: `${property.address}, ${property.city}`, url }); } catch { /* cancelled */ }
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch {
-      const el = document.createElement('textarea');
-      el.value = url;
-      el.style.cssText = 'position:fixed;opacity:0';
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand('copy');
-      document.body.removeChild(el);
-    }
-    setSharedId(property.id);
-    setTimeout(() => setSharedId(null), 2000);
-  };
-
-  const recommendedRef = useRef<HTMLDivElement>(null);
-  const forSaleRef = useRef<HTMLDivElement>(null);
-  const forRentRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   const talkToAgentRef = useRef<HTMLElement>(null);
 
+  // Scroll-aware header
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
-        setShowUserMenu(false);
-      }
+    const handler = () => setScrolled(window.scrollY > 60);
+    window.addEventListener('scroll', handler, { passive: true });
+    return () => window.removeEventListener('scroll', handler);
+  }, []);
+
+  useEffect(() => {
+    if (!showUserMenu) return;
+    function handle(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setShowUserMenu(false);
     }
-    if (showUserMenu) document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
   }, [showUserMenu]);
 
   useEffect(() => {
-    if (!showSearchModal) return;
+    if (!showSearchModal && !showMenu) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
-  }, [showSearchModal]);
+  }, [showSearchModal, showMenu]);
 
-  useEffect(() => {
-    if (!showMenu) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, [showMenu]);
-
-  const formatPrice = (price: number) => formatETBCompact(price);
-
+  // Geocoding debounce
   useEffect(() => {
     const q = inputValue.trim();
     if (q.length < 2) { setSuggestions([]); setIsLoading(false); return; }
@@ -161,18 +179,13 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
         );
         const data = await res.json();
         setSuggestions(
-          (data.features || []).map((f: { id: string; geometry: { coordinates: [number, number] }; properties: { name: string; feature_type: string; context?: { place?: { name: string }; country?: { name: string } } } }) => {
+          (data.features || []).map((f: { id: string; geometry: { coordinates: [number, number] }; properties: { name: string; feature_type: string; context?: { country?: { name: string } } } }) => {
             const type = f.properties.feature_type;
             const country = f.properties.context?.country?.name ?? 'Ethiopia';
-            const placeName = type === 'region'
-              ? country
-              : `${f.properties.name}, ${country}`;
             return {
-              id: f.id,
-              text: f.properties.name,
-              place_name: placeName,
-              center: f.geometry.coordinates,
-              place_type: [type],
+              id: f.id, text: f.properties.name,
+              place_name: type === 'region' ? country : `${f.properties.name}, ${country}`,
+              center: f.geometry.coordinates, place_type: [type],
             };
           })
         );
@@ -183,31 +196,44 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
   }, [inputValue]);
 
   useEffect(() => {
-    if (!user || !WORKER_URL) { setMyListing(null); setIsAgent(false); setIsAgentChecked(false); return }
+    if (!user || !WORKER_URL) { setMyListing(null); setIsAgent(false); setIsAgentChecked(false); return; }
     user.getIdToken().then(token =>
       fetch(`${WORKER_URL}/listing`, { headers: { Authorization: `Bearer ${token}` } })
     ).then(async res => {
-      if (!res.ok) { setMyListing(null); setIsAgentChecked(true); return }
-      const data = await res.json() as { listings: Record<string, unknown>[]; isAgent: boolean }
-      setIsAgent(data.isAgent ?? false)
-      setIsAgentChecked(true)
-      const first = data.listings?.[0]
-      setMyListing(first ? apiListingToProperty(first) : null)
-    }).catch(() => { setMyListing(null); setIsAgentChecked(true) })
-  }, [user])
+      if (!res.ok) { setMyListing(null); setIsAgentChecked(true); return; }
+      const data = await res.json() as { listings: Record<string, unknown>[]; isAgent: boolean };
+      setIsAgent(data.isAgent ?? false); setIsAgentChecked(true);
+      const first = data.listings?.[0];
+      setMyListing(first ? apiListingToProperty(first) : null);
+    }).catch(() => { setMyListing(null); setIsAgentChecked(true); });
+  }, [user]);
 
   const mergedSuggestions = useMemo(() => {
     const local = filterLocalPlaces(inputValue);
     const localNames = new Set(local.map(p => p.text.toLowerCase()));
-    const remote = suggestions.filter(s => !localNames.has(s.text.toLowerCase()));
-    return [...local, ...remote];
+    return [...local, ...suggestions.filter(s => !localNames.has(s.text.toLowerCase()))];
   }, [inputValue, suggestions]);
+
+  const handleShare = async (e: React.MouseEvent, property: Property) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}/listings?q=${encodeURIComponent(property.address)}`;
+    if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) && navigator.share) {
+      try { await navigator.share({ title: property.address, url }); } catch { /* cancelled */ }
+      return;
+    }
+    try { await navigator.clipboard.writeText(url); } catch {
+      const el = document.createElement('textarea');
+      el.value = url; el.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el);
+    }
+    setSharedId(property.id);
+    setTimeout(() => setSharedId(null), 2000);
+  };
 
   async function handleAgentFormSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!agentEmail.trim()) { setAgentError('Please enter your email address.'); return; }
-    setAgentSubmitting(true);
-    setAgentError('');
+    setAgentSubmitting(true); setAgentError('');
     try {
       const res = await fetch(`${WORKER_URL}/submit-form`, {
         method: 'POST',
@@ -224,96 +250,122 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       });
       if (!res.ok) throw new Error();
       setAgentSubmitted(true);
-    } catch {
-      setAgentError('Something went wrong. Please try again.');
-    } finally {
-      setAgentSubmitting(false);
-    }
+    } catch { setAgentError('Something went wrong. Please try again.'); }
+    finally { setAgentSubmitting(false); }
   }
 
   const openSearchModal = () => {
-    setInputValue('');
-    setSuggestions([]);
-    setRecentSearches(loadRecent());
-    setShowSearchModal(true);
+    setInputValue(''); setSuggestions([]); setRecentSearches(loadRecent()); setShowSearchModal(true);
   };
-
-  const selectSuggestion = (feature: GeocodingFeature) => {
-    const zoom = zoomForType(feature.place_type);
-    const [lng, lat] = feature.center;
-    const text = feature.text.split(',')[0];
-    saveRecent({ text, placeName: feature.place_name, lng, lat, zoom });
+  const selectSuggestion = (f: GeocodingFeature) => {
+    const zoom = zoomForType(f.place_type);
+    const [lng, lat] = f.center;
+    const text = f.text.split(',')[0];
+    saveRecent({ text, placeName: f.place_name, lng, lat, zoom });
     setShowSearchModal(false);
     onNavigateToMap(searchListingMode, { q: text, lat, lng, zoom });
   };
-
   const selectRecent = (item: RecentSearch) => {
     setShowSearchModal(false);
     onNavigateToMap(searchListingMode, { q: item.text, lat: item.lat, lng: item.lng, zoom: item.zoom });
   };
 
-  const recommendations = apiListings.slice(0, 3)
-  const forSale = apiListings.filter(p => p.type === 'sale' || p.type === 'both')
-  const forRent = apiListings.filter(p => p.type === 'rent' || p.type === 'both')
+  const recommendations = apiListings.slice(0, 6);
+  const forSale = apiListings.filter(p => p.type === 'sale' || p.type === 'both');
+  const forRent = apiListings.filter(p => p.type === 'rent' || p.type === 'both');
+  const saved = apiListings.filter(p => isFavorite(p.id));
 
   const footerLinks = {
-    findUs: [
-      { title: 'Contact Us', href: '/contact' },
-      { title: 'Office Locations', href: '/contact' },
-      { title: 'Community Events', href: '/contact' },
-    ],
-    joinUs: [
-      { title: 'Become an Agent', href: '/become-an-agent' },
-      { title: 'Careers', href: '/contact' },
-      { title: 'Culture & Values', href: '/contact' },
-    ],
-    more: [
-      { title: 'List Your Property', href: '/list-my-home' },
-      { title: 'Market Reports', href: '/contact' },
-      { title: 'Home Valuation Tool', href: '/contact' },
-      { title: 'Mortgage Calculator', href: '/contact' },
-    ],
-    legal: [
-      { title: 'Privacy Policy', href: '/privacy' },
-      { title: 'Terms of Use', href: '/terms' },
-    ],
+    findUs: [{ title: 'Contact Us', href: '/contact' }, { title: 'Office Locations', href: '/contact' }],
+    joinUs: [{ title: 'Become an Agent', href: '/become-an-agent' }, { title: 'Careers', href: '/contact' }],
+    more: [{ title: 'List Your Property', href: '/list-my-home' }, { title: 'Market Reports', href: '/contact' }],
+    legal: [{ title: 'Privacy Policy', href: '/privacy' }, { title: 'Terms of Use', href: '/terms' }],
   };
 
+  // ── Render helpers (plain functions, not React components, to avoid remount) ──
+  const renderSection = (
+    label: string, title: string, onViewAll: () => void, sectionLoading: boolean, content: React.ReactNode
+  ) => (
+    <section className="py-10 lg:py-14">
+      <div className="max-w-7xl mx-auto px-4 lg:px-6">
+        <div className="flex items-end justify-between mb-6 lg:mb-8">
+          <div>
+            <p className="text-[11px] font-bold text-blue-600 uppercase tracking-[0.2em] mb-1">{label}</p>
+            <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 tracking-tight">{title}</h2>
+          </div>
+          <button onClick={onViewAll} className="text-sm font-semibold text-gray-500 hover:text-gray-900 flex items-center gap-1 transition-colors">
+            View all <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+        {sectionLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-7 h-7 text-blue-500 animate-spin" />
+          </div>
+        ) : content}
+      </div>
+    </section>
+  );
+
+  const renderCards = (items: Property[], mode: 'buy' | 'rent') => (
+    <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide overscroll-x-contain -mx-4 px-4 lg:mx-0 lg:px-0">
+      {items.map(p => {
+        const showRent = (mode === 'rent' || !p.price) && p.rent > 0;
+        const price = showRent ? `${formatETB(p.rent)}/mo` : formatETBCompact(p.price);
+        return (
+          <PropertyCarouselCard
+            key={p.id}
+            property={p}
+            onClick={() => onPropertyClick(p)}
+            isFav={isFavorite(p.id)}
+            onFav={e => { e.stopPropagation(); toggleFavorite(p.id); }}
+            isShared={sharedId === p.id}
+            onShare={e => handleShare(e, p)}
+            priceLabel={price}
+          />
+        );
+      })}
+    </div>
+  );
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between gap-4">
+    <div className="min-h-screen bg-white">
+
+      {/* ── Header ── */}
+      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-white border-b border-gray-100 shadow-sm' : 'bg-transparent'}`}>
+        <div className="max-w-7xl mx-auto px-4 lg:px-6 h-16 flex items-center justify-between gap-4">
+
+          {/* Left: hamburger + logo */}
           <div className="flex items-center gap-3">
             {!loading && (
               <button
                 onClick={() => setShowMenu(true)}
-                className={`p-2 hover:bg-gray-100 rounded-lg transition-all ${user ? 'lg:hidden' : ''}`}
+                className={`p-2 rounded-lg transition-all ${user ? 'lg:hidden' : ''} ${scrolled ? 'hover:bg-gray-100 text-gray-700' : 'hover:bg-white/10 text-white'}`}
               >
-                <Menu className="w-6 h-6 text-gray-700" />
+                <Menu className="w-5 h-5" />
               </button>
             )}
-
-            <div className="text-xl lg:text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+            <span className={`text-xl lg:text-2xl font-bold tracking-tight transition-colors ${scrolled ? 'bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent' : 'text-white'}`}>
               Yevilla
-            </div>
+            </span>
           </div>
 
-          <div className="flex items-center gap-2 lg:gap-3">
+          {/* Right: user / sign in */}
+          <div className="flex items-center gap-3">
             {!loading && (user ? (
               <>
-                {/* Desktop user menu */}
+                {/* Desktop user dropdown */}
                 <div className="relative hidden lg:block" ref={userMenuRef}>
                   <button
-                    onClick={() => setShowUserMenu((v) => !v)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-gray-100 transition-all"
+                    onClick={() => setShowUserMenu(v => !v)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all ${scrolled ? 'hover:bg-gray-100 text-gray-700' : 'hover:bg-white/10 text-white'}`}
                   >
                     {photoURL
-                      ? <img src={photoURL} alt={user.displayName || ''} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
-                      : <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">{user.displayName?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}</div>
+                      ? <img src={photoURL} alt="" className="w-7 h-7 rounded-full object-cover" referrerPolicy="no-referrer" />
+                      : <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">{user.displayName?.[0] ?? '?'}</div>
                     }
-                    <span className="text-sm font-medium text-gray-700 max-w-[120px] truncate">{user.displayName ?? user.email}</span>
-                    <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? '-rotate-90' : 'rotate-90'}`} />
+                    <span className="text-sm font-medium max-w-[100px] truncate">{user.displayName ?? user.email}</span>
+                    <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showUserMenu ? '-rotate-90' : 'rotate-90'} opacity-60`} />
                   </button>
                   {showUserMenu && (
                     <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50">
@@ -322,45 +374,40 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                         <p className="text-xs text-gray-500 truncate">{user.email}</p>
                       </div>
                       <div className="py-1">
-                        <button onClick={() => { router.push('/favorites'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
-                          <Heart className="w-4 h-4 text-gray-400" />Favorites
-                        </button>
-                        <button onClick={() => { router.push('/settings'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
-                          <Settings className="w-4 h-4 text-gray-400" />Settings
-                        </button>
+                        {[
+                          { icon: Heart, label: 'Favorites', path: '/favorites' },
+                          { icon: Settings, label: 'Settings', path: '/settings' },
+                        ].map(item => (
+                          <button key={item.path} onClick={() => { router.push(item.path); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 text-sm font-medium text-gray-700">
+                            <item.icon className="w-4 h-4 text-gray-400" />{item.label}
+                          </button>
+                        ))}
                         <div className="border-t border-gray-100 my-1" />
-                        <button onClick={() => { router.push('/list-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                        <button onClick={() => { router.push('/list-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 text-sm font-medium text-gray-700">
                           <Key className="w-4 h-4 text-gray-400" />My Listing
                         </button>
                         {isAgentChecked && !isAgent && (
-                          <button onClick={() => { router.push('/sell-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                          <button onClick={() => { router.push('/sell-my-home'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 text-sm font-medium text-gray-700">
                             <Tag className="w-4 h-4 text-gray-400" />Sell My Home
                           </button>
                         )}
                         {isAgentChecked && !isAgent && (
-                          <button onClick={() => { router.push('/become-an-agent'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
+                          <button onClick={() => { router.push('/become-an-agent'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 text-sm font-medium text-gray-700">
                             <UserPlus className="w-4 h-4 text-gray-400" />Become an Agent
                           </button>
                         )}
                         <div className="border-t border-gray-100 my-1" />
-                        <button onClick={() => { router.push('/contact'); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-all text-sm font-medium text-gray-700">
-                          <Mail className="w-4 h-4 text-gray-400" />Contact Us
-                        </button>
-                        <div className="border-t border-gray-100 my-1" />
-                        <button
-                          onClick={() => { signOut(); setShowUserMenu(false); }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-red-50 transition-all text-sm font-medium text-red-600"
-                        >
+                        <button onClick={() => { signOut(); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-red-50 text-sm font-medium text-red-600">
                           <LogOut className="w-4 h-4" />Sign Out
                         </button>
                       </div>
                     </div>
                   )}
                 </div>
-                {/* Mobile sign out */}
+                {/* Mobile: just a small signout */}
                 <button
-                  onClick={() => signOut()}
-                  className="lg:hidden px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-xl hover:bg-red-50 transition-all"
+                  onClick={signOut}
+                  className={`lg:hidden text-sm font-medium px-3 py-1.5 rounded-lg transition-all ${scrolled ? 'text-gray-700 hover:bg-gray-100' : 'text-white/80 hover:bg-white/10'}`}
                 >
                   Sign Out
                 </button>
@@ -368,7 +415,11 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
             ) : (
               <button
                 onClick={() => setShowSignInModal(true)}
-                className="px-4 py-2 lg:px-6 lg:py-2.5 border-2 border-blue-600 text-blue-600 rounded-xl font-semibold hover:bg-blue-600 hover:text-white transition-all text-sm lg:text-base"
+                className={`px-4 py-1.5 rounded-lg text-sm font-semibold border transition-all ${
+                  scrolled
+                    ? 'border-gray-300 text-gray-700 hover:border-gray-500 hover:text-gray-900'
+                    : 'border-white/50 text-white hover:bg-white/10'
+                }`}
               >
                 Sign In
               </button>
@@ -377,679 +428,265 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
         </div>
       </header>
 
-      {/* Hero Search */}
+      {/* ── Hero ── */}
       <section
-        className="relative w-full py-16 lg:py-28"
+        className="relative min-h-[90vh] lg:min-h-screen flex items-center justify-center bg-gray-900"
         style={{ backgroundImage: 'url(/hero-bg.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}
       >
-        <div className="absolute inset-0 bg-black/50" />
-        <div className="relative z-10 max-w-7xl mx-auto px-4 lg:px-6">
-          <div className="text-center mb-6 lg:mb-8">
-            <h1 className="text-3xl lg:text-5xl font-bold text-white mb-3 lg:mb-4">
-              Find Your Dream Home in Ethiopia
-            </h1>
-            <p className="text-base lg:text-lg text-white/80 px-2 max-w-2xl mx-auto">
-              Discover the perfect property in your ideal neighborhood.
-            </p>
-          </div>
+        {/* Cinematic overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/50 to-black/80" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/20 to-transparent" />
 
-          <div
-            onClick={openSearchModal}
-            className="max-w-2xl mx-auto bg-white rounded-xl lg:rounded-2xl shadow-lg lg:shadow-xl p-3 lg:p-4 cursor-pointer hover:shadow-2xl transition-all border-2 border-gray-100 hover:border-blue-500"
-          >
-            <div className="flex items-center gap-3 lg:gap-4">
-              <Search className="w-5 h-5 lg:w-6 lg:h-6 text-gray-400" />
-              <span className="flex-1 text-base lg:text-lg text-gray-400">Search by city, neighborhood, or ZIP...</span>
-            </div>
-          </div>
-        </div>
-      </section>
+        <div className="relative z-10 text-center px-4 w-full max-w-3xl mx-auto">
+          <p className="text-white/50 text-xs lg:text-sm font-bold tracking-[0.35em] uppercase mb-4 lg:mb-6">
+            Ethiopia's Premier Real Estate
+          </p>
+          <h1 className="text-5xl lg:text-7xl xl:text-8xl font-bold text-white leading-[1.0] tracking-tight mb-5 lg:mb-7">
+            Find Your<br />Dream Home
+          </h1>
+          <p className="text-white/65 text-base lg:text-lg mb-9 lg:mb-11 max-w-lg mx-auto leading-relaxed">
+            Curated listings across Addis Ababa and Ethiopia. Buy or rent with confidence.
+          </p>
 
-      {/* Recommendations */}
-      {(!loadingListings && recommendations.length === 0) ? null : (
-      <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
-        <div className="flex items-center justify-between mb-3 lg:mb-4">
-          <h2 className="text-xl lg:text-3xl font-bold text-gray-900">{'Recommended for You'}</h2>
-          <button onClick={() => onNavigateToMap('rent')} className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base">
-            {'View All'} <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
-          </button>
-        </div>
-        {loadingListings ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-          </div>
-        ) : (
-          <>
-            <div
-              ref={recommendedRef}
-              className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide lg:overflow-x-auto"
-              onScroll={(e) => {
-                const target = e.target as HTMLDivElement;
-                const index = Math.round(target.scrollLeft / (288 + 12));
-                setRecommendedIndex(index);
-              }}
-            >
-              {recommendations.map((property) => (
-                <div
-                  key={property.id}
-                  className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all snap-start cursor-pointer group"
-                  onClick={() => onPropertyClick(property)}
-                >
-                  <div className="relative h-44 lg:h-48 overflow-hidden">
-                    <img
-                      src={property.image}
-                      alt={property.address}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                    {getNewBadgeLabel(property.createdAt) && (
-                      <span className="absolute top-2 lg:top-3 left-2 lg:left-3 z-10 bg-green-800 text-white text-xs font-semibold px-2.5 py-1 rounded-full shadow-lg">
-                        {getNewBadgeLabel(property.createdAt)}
-                      </span>
-                    )}
-                    <div className="absolute top-2 lg:top-3 right-2 lg:right-3 flex flex-col gap-2 z-10">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
-                      >
-                        <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
-                      </button>
-                      <button
-                        onClick={(e) => handleShare(e, property)}
-                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
-                      >
-                        {sharedId === property.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-700" />}
-                      </button>
-                    </div>
-                    <div className="absolute bottom-2 lg:bottom-3 left-2 lg:left-3 right-2 lg:right-3">
-                      <div className="text-white text-xl lg:text-2xl font-bold">
-                        {property.type === 'rent' ? `${formatETB(property.rent)}/mo` : formatPrice(property.price)}
-                      </div>
-                      <div className="text-white/90 text-xs lg:text-sm">{[property.subCity, property.city].filter(Boolean).join(', ')}</div>
-                    </div>
-                  </div>
-                  <div className="p-3 lg:p-4">
-                    <div className="flex items-center gap-3 lg:gap-4 text-gray-600 text-xs lg:text-sm">
-                      <span>{property.beds} {'beds'}</span>
-                      <span>•</span>
-                      <span>{property.baths} {'baths'}</span>
-                      <span>•</span>
-                      <span>{property.sqft.toLocaleString()} {'sqft'}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-center gap-2 mt-2 lg:hidden">
-              {recommendations.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => {
-                    if (recommendedRef.current) {
-                      recommendedRef.current.scrollTo({ left: index * (288 + 12), behavior: 'smooth' });
-                    }
-                  }}
-                  className={`w-2 h-2 rounded-full transition-all ${
-                    index === recommendedIndex ? 'bg-blue-600 w-6' : 'bg-gray-300'
-                  }`}
-                />
-              ))}
-            </div>
-          </>
-        )}
-      </section>
-      )}
-
-      {/* For Rent */}
-      {(!loadingListings && forRent.length === 0) ? null : (
-      <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
-        <div className="flex items-center justify-between mb-3 lg:mb-4">
-          <div className="flex items-center gap-2">
-            <Key className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600" />
-            <h2 className="text-xl lg:text-3xl font-bold text-gray-900">{'For Rent'}</h2>
-          </div>
-          <button onClick={() => onNavigateToMap('rent')} className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base">
-            {'View All'} <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
-          </button>
-        </div>
-        {loadingListings ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-          </div>
-        ) : (
-          <>
-            <div
-              ref={forRentRef}
-              className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide lg:overflow-x-auto"
-              onScroll={(e) => {
-                const target = e.target as HTMLDivElement;
-                const index = Math.round(target.scrollLeft / (288 + 12));
-                setForRentIndex(index);
-              }}
-            >
-              {forRent.map((property) => (
-                <div
-                  key={property.id}
-                  className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all snap-start cursor-pointer group"
-                  onClick={() => onPropertyClick(property)}
-                >
-                  <div className="relative h-44 lg:h-48 overflow-hidden">
-                    <img
-                      src={property.image}
-                      alt={property.address}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    {getNewBadgeLabel(property.createdAt) && (
-                      <span className="absolute top-2 lg:top-3 left-2 lg:left-3 z-10 bg-green-800 text-white text-xs font-semibold px-2.5 py-1 rounded-full shadow-lg">
-                        {getNewBadgeLabel(property.createdAt)}
-                      </span>
-                    )}
-                    <div className="absolute top-2 lg:top-3 right-2 lg:right-3 flex flex-col gap-2 z-10">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
-                      >
-                        <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
-                      </button>
-                      <button
-                        onClick={(e) => handleShare(e, property)}
-                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
-                      >
-                        {sharedId === property.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-700" />}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="p-4 lg:p-5">
-                    <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
-                      {formatETB(property.rent)}/mo
-                    </div>
-                    <div className="flex items-center gap-2 lg:gap-3 text-gray-600 mb-2 text-xs lg:text-sm">
-                      <span>{property.beds} {'bd'}</span>
-                      <span>•</span>
-                      <span>{property.baths} {'ba'}</span>
-                      {property.sqft > 0 && <><span>•</span><span>{property.sqft.toLocaleString()} sqft</span></>}
-                    </div>
-                    <div className="text-gray-700 font-medium text-sm lg:text-base">{[property.subCity, property.city].filter(Boolean).join(', ')}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-center gap-2 mt-2 lg:hidden">
-              {forRent.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => {
-                    if (forRentRef.current) {
-                      forRentRef.current.scrollTo({ left: index * (288 + 12), behavior: 'smooth' });
-                    }
-                  }}
-                  className={`w-2 h-2 rounded-full transition-all ${
-                    index === forRentIndex ? 'bg-blue-600 w-6' : 'bg-gray-300'
-                  }`}
-                />
-              ))}
-            </div>
-          </>
-        )}
-      </section>
-      )}
-
-      {/* For Sale */}
-      {(!loadingListings && forSale.length === 0) ? null : (
-      <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
-        <div className="flex items-center justify-between mb-3 lg:mb-4">
-          <div className="flex items-center gap-2">
-            <Home className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600" />
-            <h2 className="text-xl lg:text-3xl font-bold text-gray-900">{'For Sale'}</h2>
-          </div>
-          <button onClick={() => onNavigateToMap('buy')} className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base">
-            {'View All'} <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
-          </button>
-        </div>
-        {loadingListings ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-          </div>
-        ) : (
-          <>
-            <div
-              ref={forSaleRef}
-              className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide lg:overflow-x-auto"
-              onScroll={(e) => {
-                const target = e.target as HTMLDivElement;
-                const index = Math.round(target.scrollLeft / (288 + 12));
-                setForSaleIndex(index);
-              }}
-            >
-              {forSale.map((property) => (
-                <div
-                  key={property.id}
-                  className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all snap-start cursor-pointer group"
-                  onClick={() => onPropertyClick(property)}
-                >
-                  <div className="relative h-44 lg:h-48 overflow-hidden">
-                    <img
-                      src={property.image}
-                      alt={property.address}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    {getNewBadgeLabel(property.createdAt) && (
-                      <span className="absolute top-2 lg:top-3 left-2 lg:left-3 z-10 bg-green-800 text-white text-xs font-semibold px-2.5 py-1 rounded-full shadow-lg">
-                        {getNewBadgeLabel(property.createdAt)}
-                      </span>
-                    )}
-                    <div className="absolute top-2 lg:top-3 right-2 lg:right-3 flex flex-col gap-2 z-10">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
-                      >
-                        <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
-                      </button>
-                      <button
-                        onClick={(e) => handleShare(e, property)}
-                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
-                      >
-                        {sharedId === property.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-700" />}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="p-4 lg:p-5">
-                    <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
-                      {formatPrice(property.price)}
-                    </div>
-                    <div className="flex items-center gap-2 lg:gap-3 text-gray-600 mb-2 lg:mb-3 text-xs lg:text-sm">
-                      <span>{property.beds} {'bd'}</span>
-                      <span>•</span>
-                      <span>{property.baths} {'ba'}</span>
-                      <span>•</span>
-                      <span>{property.sqft.toLocaleString()} {'sqft'}</span>
-                    </div>
-                    <div className="text-gray-700 font-medium text-sm lg:text-base">{[property.subCity, property.city].filter(Boolean).join(', ')}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-center gap-2 mt-2 lg:hidden">
-              {forSale.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => {
-                    if (forSaleRef.current) {
-                      forSaleRef.current.scrollTo({ left: index * (288 + 12), behavior: 'smooth' });
-                    }
-                  }}
-                  className={`w-2 h-2 rounded-full transition-all ${
-                    index === forSaleIndex ? 'bg-blue-600 w-6' : 'bg-gray-300'
-                  }`}
-                />
-              ))}
-            </div>
-          </>
-        )}
-      </section>
-      )}
-
-      {/* Saved Listings — signed-in users with at least one favorite */}
-      {user && apiListings.filter((p) => isFavorite(p.id)).length > 0 && (() => {
-        const saved = apiListings.filter((p) => isFavorite(p.id));
-        return (
-          <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
-            <div className="flex items-center justify-between mb-3 lg:mb-4">
-              <div className="flex items-center gap-2">
-                <Heart className="w-5 h-5 lg:w-6 lg:h-6 text-red-500 fill-red-500" />
-                <h2 className="text-xl lg:text-3xl font-bold text-gray-900">Saved Listings</h2>
-              </div>
-              <button onClick={() => router.push('/favorites')} className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base">
-                View All <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
+          {/* Buy / Rent toggle */}
+          <div className="flex justify-center mb-4">
+            <div className="flex bg-white/15 backdrop-blur-md rounded-xl p-1 gap-1 border border-white/20">
+              <button
+                onClick={() => setSearchListingMode('buy')}
+                className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
+                  searchListingMode === 'buy' ? 'bg-white text-gray-900 shadow-sm' : 'text-white/80 hover:bg-white/10'
+                }`}
+              >
+                <Home className="w-4 h-4" />Buy
+              </button>
+              <button
+                onClick={() => setSearchListingMode('rent')}
+                className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
+                  searchListingMode === 'rent' ? 'bg-white text-gray-900 shadow-sm' : 'text-white/80 hover:bg-white/10'
+                }`}
+              >
+                <Key className="w-4 h-4" />Rent
               </button>
             </div>
-            <div className="flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide">
-              {saved.map((property) => (
-                <div
-                  key={property.id}
-                  className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl transition-all snap-start cursor-pointer group"
-                  onClick={() => onPropertyClick(property)}
-                >
-                  <div className="relative h-44 lg:h-48 overflow-hidden">
-                    <img
-                      src={property.image}
-                      alt={property.address}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    {getNewBadgeLabel(property.createdAt) && (
-                      <span className="absolute top-2 lg:top-3 left-2 lg:left-3 z-10 bg-green-800 text-white text-xs font-semibold px-2.5 py-1 rounded-full shadow-lg">
-                        {getNewBadgeLabel(property.createdAt)}
-                      </span>
-                    )}
-                    <div className="absolute top-2 lg:top-3 right-2 lg:right-3 flex flex-col gap-2 z-10">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
-                      >
-                        <Heart className="w-4 h-4 fill-red-500 text-red-500" />
-                      </button>
-                      <button
-                        onClick={(e) => handleShare(e, property)}
-                        className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
-                      >
-                        {sharedId === property.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-700" />}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="p-4 lg:p-5">
-                    <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
-                      {property.type === 'rent' ? `${formatETB(property.rent)}/mo` : formatPrice(property.price)}
-                    </div>
-                    <div className="flex items-center gap-2 lg:gap-3 text-gray-600 mb-2 text-xs lg:text-sm">
-                      <span>{property.beds} bd</span>
-                      <span>•</span>
-                      <span>{property.baths} ba</span>
-                      <span>•</span>
-                      <span>{property.sqft.toLocaleString()} sqft</span>
-                    </div>
-                    <div className="text-gray-700 font-medium text-sm lg:text-base">{property.address}</div>
-                    <div className="text-gray-500 text-xs lg:text-sm">{[property.subCity, property.city].filter(Boolean).join(', ')}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        );
-      })()}
-
-      {/* My Listing — shown only when the signed-in user has a published listing */}
-      {myListing && myListing.status === 'active' && (
-        <section className="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
-          <div className="flex items-center justify-between mb-3 lg:mb-4">
-            <div className="flex items-center gap-2">
-              <Home className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600" />
-              <h2 className="text-xl lg:text-3xl font-bold text-gray-900">My Listing</h2>
-            </div>
-            <button
-              onClick={() => router.push('/list-my-home')}
-              className="text-blue-600 font-semibold flex items-center gap-1 hover:gap-2 transition-all text-sm lg:text-base"
-            >
-              Manage <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5" />
-            </button>
           </div>
-          <div className="flex gap-3 lg:gap-4">
-            <div
-              className="flex-shrink-0 w-72 lg:w-80 bg-white rounded-xl lg:rounded-2xl overflow-hidden shadow-md lg:shadow-lg hover:shadow-xl lg:hover:shadow-2xl transition-all cursor-pointer group"
-              onClick={() => onPropertyClick(myListing)}
-            >
-              <div className="relative h-44 lg:h-48 overflow-hidden">
-                <img
-                  src={myListing.image}
-                  alt={myListing.address}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                {getNewBadgeLabel(myListing.createdAt) && (
-                  <span className="absolute top-2 lg:top-3 left-2 lg:left-3 z-10 bg-green-800 text-white text-xs font-semibold px-2.5 py-1 rounded-full shadow-lg">
-                    {getNewBadgeLabel(myListing.createdAt)}
-                  </span>
-                )}
-                <button
-                  onClick={(e) => handleShare(e, myListing)}
-                  className="absolute top-2 lg:top-3 right-2 lg:right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all z-10"
-                >
-                  {sharedId === myListing.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-700" />}
-                </button>
-                <div className="absolute bottom-2 lg:bottom-3 left-2 lg:left-3 right-2 lg:right-3">
-                  <div className="text-white text-xl lg:text-2xl font-bold">
-                    {formatETB(myListing.rent)}/mo
-                  </div>
-                  <div className="text-white/90 text-xs lg:text-sm">{[myListing.subCity, myListing.city].filter(Boolean).join(', ')}</div>
-                </div>
-              </div>
-              <div className="p-3 lg:p-4">
-                <div className="flex items-center gap-3 lg:gap-4 text-gray-600 text-xs lg:text-sm mb-2">
-                  {myListing.beds > 0 && <span>{myListing.beds} beds</span>}
-                  {myListing.beds > 0 && myListing.baths > 0 && <span>•</span>}
-                  {myListing.baths > 0 && <span>{myListing.baths} baths</span>}
-                  {myListing.sqft > 0 && <><span>•</span><span>{myListing.sqft.toLocaleString()} m²</span></>}
-                </div>
-                {myListing.address && (
-                  <div className="text-gray-700 font-medium text-sm lg:text-base truncate">{myListing.address}</div>
-                )}
-              </div>
+
+          {/* Search bar */}
+          <div
+            onClick={openSearchModal}
+            className="flex items-center gap-3 bg-white rounded-2xl px-5 py-5 lg:py-4 cursor-pointer shadow-2xl hover:shadow-3xl transition-all border-2 border-transparent hover:border-blue-100 group max-w-2xl mx-auto"
+          >
+            <Search className="w-5 h-5 text-gray-400 flex-shrink-0 group-hover:text-blue-500 transition-colors" />
+            <span className="flex-1 text-gray-400 text-base text-left truncate">
+              <span className="lg:hidden">Search city or area…</span>
+              <span className="hidden lg:inline">City, neighborhood, or sub-city…</span>
+            </span>
+            <span className="flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-4 lg:px-5 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm">
+              Search
+            </span>
+          </div>
+
+          {/* Area chips */}
+          <div className="flex justify-center mt-5">
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide px-4 pb-1 max-w-full snap-x">
+            {['Bole', 'CMC', 'Kazanchis', 'Gerji', 'Sarbet', 'Old Airport'].map(area => (
+              <button
+                key={area}
+                onClick={() => {
+                  const params = new URLSearchParams();
+                  params.set('mode', searchListingMode);
+                  params.set('q', area);
+                  router.push(`/listings?${params.toString()}`);
+                }}
+                className="flex-shrink-0 snap-start px-3.5 py-1.5 bg-white/15 backdrop-blur-sm text-white text-sm rounded-full border border-white/20 hover:bg-white/25 transition-all"
+              >
+                {area}
+              </button>
+            ))}
             </div>
           </div>
-        </section>
-      )}
-
-      {/* Talk to an Agent */}
-      <section ref={talkToAgentRef} className="max-w-3xl mx-auto px-4 lg:px-6 py-8 lg:py-16">
-        <div className="text-center mb-6 lg:mb-10">
-          <h2 className="text-2xl lg:text-5xl font-bold text-gray-900 mb-3 lg:mb-4">{'Talk to an Agent'}</h2>
-          <p className="text-gray-600 text-base lg:text-xl max-w-2xl mx-auto px-2">
-            {'Looking for your next move? Our team is here to help you navigate the market with ease.'}
-          </p>
         </div>
 
-        {agentSubmitted ? (
-          <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
-            <svg className="w-14 h-14 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            <p className="text-xl font-bold text-gray-800">Request submitted!</p>
-            <p className="text-gray-500">An agent will reach out to you shortly.</p>
-          </div>
-        ) : (
-          <form className="space-y-6" onSubmit={handleAgentFormSubmit}>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {'Where are you searching for homes?'}
-              </label>
-              <input
-                type="text"
-                placeholder="City, Neighborhood, or ZIP"
-                value={agentLocation}
-                onChange={e => setAgentLocation(e.target.value)}
-                className="w-full px-5 py-4 bg-white border-2 border-gray-200 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm hover:border-gray-300"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {'Email Address *'}
-                </label>
-                <input
-                  type="email"
-                  placeholder="email@example.com"
-                  value={agentEmail}
-                  onChange={e => setAgentEmail(e.target.value)}
-                  className="w-full px-5 py-4 bg-white border-2 border-gray-200 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm hover:border-gray-300"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {'Phone Number'}
-                </label>
-                <input
-                  type="tel"
-                  placeholder="+251 9X XXX XXXX"
-                  value={agentPhone}
-                  onChange={e => setAgentPhone(e.target.value)}
-                  className="w-full px-5 py-4 bg-white border-2 border-gray-200 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm hover:border-gray-300"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {'What can we help you with?'}
-              </label>
-              <textarea
-                placeholder={'Tell us about your real estate goals...'}
-                rows={5}
-                value={agentMessage}
-                onChange={e => setAgentMessage(e.target.value)}
-                className="w-full px-5 py-4 bg-white border-2 border-gray-200 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all resize-none shadow-sm hover:border-gray-300"
-              />
-            </div>
-
-            {agentError && <p className="text-sm text-red-600">{agentError}</p>}
-
-            <button
-              type="submit"
-              disabled={agentSubmitting}
-              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 disabled:opacity-60 text-white py-4 rounded-xl font-bold text-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/50 hover:scale-[1.02] transform flex items-center justify-center gap-2"
-            >
-              {agentSubmitting && <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>}
-              {agentSubmitting ? 'Submitting…' : 'Submit Request'}
-            </button>
-
-            <p className="text-xs text-gray-500 leading-relaxed">
-              By submitting this form, I agree to receive calls and SMS messages from Yevilla for the purpose of updates and promotions. Messages may be sent on a recurring basis and frequency will vary. Message and data rates may apply. Consent to receive SMS messages is not required as a condition for purchasing any goods or services. To unsubscribe from SMS messages, reply &quot;STOP&quot; at any time. For assistance, <a href="/contact" className="text-blue-600 hover:underline">visit our Contact page</a>. By proceeding, you confirm that you have read and agree to our{' '}
-              <a href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</a>{' '}and{' '}
-              <a href="/terms" className="text-blue-600 hover:underline">Terms of Use</a>.
-            </p>
-          </form>
-        )}
+        {/* Bottom scroll cue */}
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 opacity-40">
+          <div className="w-px h-8 bg-white/60" />
+          <p className="text-white text-[10px] font-semibold tracking-[0.2em] uppercase">Scroll</p>
+        </div>
       </section>
 
-      {/* Footer */}
-      <footer className="bg-gray-900 text-white py-12">
-        <div className="max-w-7xl mx-auto px-4 lg:px-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            <div>
-              <h3 className="font-bold text-lg mb-4">Find Us</h3>
-              <ul className="space-y-2">
-                {footerLinks.findUs.map((link, index) => (
-                  <li key={index}>
-                    <a href={link.href} className="text-gray-400 hover:text-white transition-colors">
-                      {link.title}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
+      {/* ── Listing sections ── */}
+      {(loadingListings || recommendations.length > 0) && renderSection('Curated Picks', 'Recommended for You', () => onNavigateToMap(), loadingListings, renderCards(recommendations, 'buy'))}
+      {!loadingListings && recommendations.length > 0 && <div className="border-t border-gray-100 max-w-7xl mx-auto" />}
 
-            <div>
-              <h3 className="font-bold text-lg mb-4">Join Us</h3>
-              <ul className="space-y-2">
-                {footerLinks.joinUs.map((link, index) => (
-                  <li key={index}>
-                    <a href={link.href} className="text-gray-400 hover:text-white transition-colors">
-                      {link.title}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
+      {(loadingListings || forRent.length > 0) && renderSection('Rentals', 'Homes for Rent', () => onNavigateToMap('rent'), loadingListings, renderCards(forRent, 'rent'))}
+      {!loadingListings && forRent.length > 0 && <div className="border-t border-gray-100 max-w-7xl mx-auto" />}
 
-            <div>
-              <h3 className="font-bold text-lg mb-4">More</h3>
-              <ul className="space-y-2">
-                {footerLinks.more.map((link, index) => (
-                  <li key={index}>
-                    <a href={link.href} className="text-gray-400 hover:text-white transition-colors">
-                      {link.title}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
+      {(loadingListings || forSale.length > 0) && renderSection('For Sale', 'Homes for Sale', () => onNavigateToMap('buy'), loadingListings, renderCards(forSale, 'buy'))}
 
-            <div>
-              <h3 className="font-bold text-lg mb-4">Legal</h3>
-              <ul className="space-y-2">
-                {footerLinks.legal.map((link, index) => (
-                  <li key={index}>
-                    <a href={link.href} className="text-gray-400 hover:text-white transition-colors">
-                      {link.title}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
+      {user && saved.length > 0 && <>{
+        <><div className="border-t border-gray-100 max-w-7xl mx-auto" />{renderSection('Your Saves', 'Saved Listings', () => router.push('/favorites'), false, renderCards(saved, 'buy'))}</>
+      }</>}
+
+      {myListing && myListing.status === 'active' && (
+        <><div className="border-t border-gray-100 max-w-7xl mx-auto" />{renderSection('Your Property', 'My Listing', () => router.push('/list-my-home'), false, renderCards([myListing], 'rent'))}</>
+      )}
+
+      {/* ── Talk to an Agent — dark cinematic section ── */}
+      <section ref={talkToAgentRef} className="bg-gray-950 py-16 lg:py-24 px-4">
+        <div className="max-w-2xl mx-auto">
+          <div className="text-center mb-10 lg:mb-12">
+            <p className="text-blue-400 text-[11px] font-bold uppercase tracking-[0.3em] mb-3">Expert Guidance</p>
+            <h2 className="text-3xl lg:text-5xl font-bold text-white tracking-tight mb-4">Talk to an Agent</h2>
+            <p className="text-gray-400 text-base max-w-md mx-auto leading-relaxed">
+              Our local experts are ready to help you navigate the market and find your perfect home.
+            </p>
           </div>
 
-          <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p>&copy; 2026 Yevilla. All rights reserved.</p>
+          {agentSubmitted ? (
+            <div className="flex flex-col items-center py-10 gap-4 text-center">
+              <div className="w-16 h-16 rounded-full bg-green-500/15 flex items-center justify-center">
+                <svg className="w-8 h-8 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <p className="text-xl font-bold text-white">Request submitted!</p>
+              <p className="text-gray-400">An agent will reach out to you shortly.</p>
+            </div>
+          ) : (
+            <form className="space-y-4" onSubmit={handleAgentFormSubmit}>
+              <input
+                type="text" placeholder="Where are you searching? (City, Neighborhood)"
+                value={agentLocation} onChange={e => setAgentLocation(e.target.value)}
+                className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:border-blue-400 focus:outline-none transition-colors text-sm"
+              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input
+                  type="email" placeholder="Email Address *"
+                  value={agentEmail} onChange={e => setAgentEmail(e.target.value)}
+                  className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:border-blue-400 focus:outline-none transition-colors text-sm"
+                />
+                <input
+                  type="tel" placeholder="Phone Number"
+                  value={agentPhone} onChange={e => setAgentPhone(e.target.value)}
+                  className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:border-blue-400 focus:outline-none transition-colors text-sm"
+                />
+              </div>
+              <textarea
+                placeholder="Tell us about your real estate goals…"
+                rows={4}
+                value={agentMessage} onChange={e => setAgentMessage(e.target.value)}
+                className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:border-blue-400 focus:outline-none transition-colors resize-none text-sm"
+              />
+              {agentError && <p className="text-sm text-red-400">{agentError}</p>}
+              <button
+                type="submit" disabled={agentSubmitting}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white py-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-900/40"
+              >
+                {agentSubmitting && <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>}
+                {agentSubmitting ? 'Submitting…' : 'Submit Request'}
+              </button>
+              <p className="text-[11px] text-gray-600 leading-relaxed text-center">
+                By submitting, you agree to our{' '}
+                <a href="/privacy" className="text-gray-400 hover:text-white transition-colors">Privacy Policy</a>{' '}and{' '}
+                <a href="/terms" className="text-gray-400 hover:text-white transition-colors">Terms of Use</a>.
+              </p>
+            </form>
+          )}
+        </div>
+      </section>
+
+      {/* ── Footer ── */}
+      <footer className="bg-gray-950 border-t border-white/5 py-12 lg:py-16">
+        <div className="max-w-7xl mx-auto px-4 lg:px-6">
+          <div className="mb-10 lg:mb-12">
+            <span className="text-2xl font-bold text-white tracking-tight">Yevilla</span>
+            <p className="text-gray-500 text-sm mt-1.5 max-w-xs">Ethiopia's premier real estate marketplace.</p>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
+            {[
+              { title: 'Find Us', links: footerLinks.findUs },
+              { title: 'Join Us', links: footerLinks.joinUs },
+              { title: 'More', links: footerLinks.more },
+              { title: 'Legal', links: footerLinks.legal },
+            ].map(col => (
+              <div key={col.title}>
+                <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-4">{col.title}</p>
+                <ul className="space-y-3">
+                  {col.links.map(link => (
+                    <li key={link.title}>
+                      <a href={link.href} className="text-gray-400 hover:text-white text-sm transition-colors">{link.title}</a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-white/5 pt-6 text-gray-600 text-xs">
+            &copy; 2026 Yevilla Real Estate. All rights reserved.
           </div>
         </div>
       </footer>
 
-      {/* Search Modal */}
+      {/* ── Search Modal ── */}
       {showSearchModal && (
-        <div
-          className="fixed inset-0 bg-black/50 z-[1000] flex items-start justify-center pt-20 lg:pt-20"
-          onClick={() => setShowSearchModal(false)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6">
-              {/* Buy/Rent Toggle */}
-              <div className="flex bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-1.5 gap-1 shadow-inner mb-4">
-                <button onClick={() => setSearchListingMode('buy')} className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-all text-sm font-medium ${searchListingMode === 'buy' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30' : 'text-gray-600 hover:text-gray-900'}`}>
-                  <Home className="w-4 h-4" /><span>Buy</span>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex items-start justify-center pt-16 lg:pt-24" onClick={() => setShowSearchModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-5">
+              {/* Buy/Rent */}
+              <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden mb-4">
+                <button onClick={() => setSearchListingMode('buy')} className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-all ${searchListingMode === 'buy' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
+                  <Home className="w-4 h-4" />Buy
                 </button>
-                <button onClick={() => setSearchListingMode('rent')} className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-all text-sm font-medium ${searchListingMode === 'rent' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30' : 'text-gray-600 hover:text-gray-900'}`}>
-                  <Key className="w-4 h-4" /><span>Rent</span>
+                <button onClick={() => setSearchListingMode('rent')} className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-all border-l border-gray-200 ${searchListingMode === 'rent' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
+                  <Key className="w-4 h-4" />Rent
                 </button>
               </div>
 
-              {/* Search Input */}
-              <div className="flex items-center gap-3 mb-4 border-b border-gray-100 pb-4">
-                {isLoading
-                  ? <Loader2 className="w-5 h-5 text-blue-500 animate-spin flex-shrink-0" />
-                  : <Search className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                }
+              {/* Input */}
+              <div className="flex items-center gap-3 border-b border-gray-100 pb-4 mb-4">
+                {isLoading ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" /> : <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />}
                 <input
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && mergedSuggestions.length > 0) selectSuggestion(mergedSuggestions[0]);
-                    if (e.key === 'Escape') setShowSearchModal(false);
-                  }}
-                  placeholder="Search by city, address, or ZIP..."
-                  className="flex-1 outline-none text-lg"
+                  type="text" value={inputValue} onChange={e => setInputValue(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && mergedSuggestions.length > 0) selectSuggestion(mergedSuggestions[0]); if (e.key === 'Escape') setShowSearchModal(false); }}
+                  placeholder="Search by city, address, or sub-city…"
+                  className="flex-1 outline-none text-base text-gray-900 placeholder:text-gray-400"
                   autoFocus
                 />
                 {inputValue && (
                   <button onClick={() => { setInputValue(''); setSuggestions([]); }} className="p-1 hover:bg-gray-100 rounded-full">
-                    <X className="w-5 h-5 text-gray-400" />
+                    <X className="w-4 h-4 text-gray-400" />
                   </button>
                 )}
               </div>
 
               {/* Suggestions */}
               {mergedSuggestions.length > 0 && (
-                <div className="space-y-1 mb-4">
-                  {mergedSuggestions.map((feature) => (
-                    <button key={feature.id} onClick={() => selectSuggestion(feature)} className="w-full flex items-start gap-3 p-3 hover:bg-blue-50 rounded-xl transition-all text-left">
+                <div className="space-y-0.5 mb-2">
+                  {mergedSuggestions.map(f => (
+                    <button key={f.id} onClick={() => selectSuggestion(f)} className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-xl transition-all text-left">
                       <MapPin className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
                       <div className="min-w-0">
-                        <div className="font-medium text-gray-900 text-sm truncate">{feature.text.split(',')[0]}</div>
-                        <div className="text-xs text-gray-500 truncate">{feature.place_name}</div>
+                        <p className="text-sm font-medium text-gray-900 truncate">{f.text.split(',')[0]}</p>
+                        <p className="text-xs text-gray-400 truncate">{f.place_name}</p>
                       </div>
                     </button>
                   ))}
                 </div>
               )}
 
-              {/* Recent Searches */}
+              {/* Recent */}
               {!inputValue && recentSearches.length > 0 && (
-                <div className="mb-4">
+                <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-semibold text-gray-900 text-sm">Recent Searches</h3>
-                    <button onClick={() => { localStorage.removeItem(RECENT_KEY); setRecentSearches([]); }} className="text-xs text-gray-400 hover:text-red-500 transition-colors">Clear all</button>
+                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Recent</p>
+                    <button onClick={() => { localStorage.removeItem(RECENT_KEY); setRecentSearches([]); }} className="text-xs text-gray-400 hover:text-red-500 transition-colors">Clear</button>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     {recentSearches.map((item, i) => (
-                      <button key={i} onClick={() => selectRecent(item)} className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 rounded-xl transition-all text-left">
-                        <TrendingUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      <button key={i} onClick={() => selectRecent(item)} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-xl text-left">
+                        <TrendingUp className="w-4 h-4 text-gray-300 flex-shrink-0" />
                         <div className="min-w-0">
-                          <div className="text-sm font-medium text-gray-700 truncate">{item.text}</div>
-                          <div className="text-xs text-gray-400 truncate">{item.placeName}</div>
+                          <p className="text-sm font-medium text-gray-700 truncate">{item.text}</p>
+                          <p className="text-xs text-gray-400 truncate">{item.placeName}</p>
                         </div>
                       </button>
                     ))}
@@ -1060,14 +697,10 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
               {/* Nearby chips */}
               {!inputValue && recentSearches.length === 0 && (
                 <div>
-                  <h3 className="font-semibold text-gray-900 mb-2 text-sm">Nearby</h3>
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Nearby</p>
                   <div className="flex flex-wrap gap-2">
-                    {['Bole', 'CMC', 'Kazanchis', 'Gerji', 'Sarbet', 'Old Airport'].map((area) => (
-                      <button
-                        key={area}
-                        className="px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-sm font-medium hover:bg-blue-100 transition-all"
-                        onClick={() => setInputValue(area)}
-                      >
+                    {['Bole', 'CMC', 'Kazanchis', 'Gerji', 'Sarbet', 'Old Airport'].map(area => (
+                      <button key={area} onClick={() => setInputValue(area)} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full text-sm font-medium hover:bg-gray-200 transition-all">
                         {area}
                       </button>
                     ))}
@@ -1081,93 +714,83 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
 
       <SignInModal open={showSignInModal} onClose={() => setShowSignInModal(false)} />
 
-      {/* Menu (mobile for signed-in, all screens for signed-out) */}
+      {/* ── Side drawer menu ── */}
       {showMenu && (
         <>
-          <div
-            className={`fixed inset-0 bg-black/50 z-[1000] ${user ? 'lg:hidden' : ''}`}
-            onClick={() => setShowMenu(false)}
-          />
-          <div className={`fixed top-0 left-0 h-full w-80 bg-white z-[1001] shadow-2xl ${user ? 'lg:hidden' : ''} transform transition-transform`}>
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                Yevilla
-              </div>
-              <button
-                onClick={() => setShowMenu(false)}
-                className="p-2 hover:bg-gray-100 rounded-full transition-all"
-              >
-                <X className="w-6 h-6 text-gray-600" />
+          <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-[1000] ${user ? 'lg:hidden' : ''}`} onClick={() => setShowMenu(false)} />
+          <div className={`fixed top-0 left-0 h-full w-72 bg-white z-[1001] shadow-2xl ${user ? 'lg:hidden' : ''}`}>
+            <div className="px-5 py-5 border-b border-gray-100 flex items-center justify-between">
+              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Yevilla</span>
+              <button onClick={() => setShowMenu(false)} className="p-2 hover:bg-gray-100 rounded-full">
+                <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
-
-            <div className="p-4 space-y-1">
+            <div className="p-3 space-y-0.5">
               {user ? (
                 <>
-                  <div className="flex items-center gap-3 px-4 py-3 mb-1">
+                  <div className="flex items-center gap-3 px-3 py-3 mb-1">
                     {photoURL
-                      ? <img src={photoURL} alt={user.displayName || ''} className="w-9 h-9 rounded-full object-cover flex-shrink-0" referrerPolicy="no-referrer" />
-                      : <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">{user.displayName?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}</div>
+                      ? <img src={photoURL} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" referrerPolicy="no-referrer" />
+                      : <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">{user.displayName?.[0] ?? '?'}</div>
                     }
                     <div className="min-w-0">
-                      {user.displayName && <p className="font-semibold text-gray-900 truncate text-sm">{user.displayName}</p>}
+                      {user.displayName && <p className="font-semibold text-gray-900 text-sm truncate">{user.displayName}</p>}
                       <p className="text-xs text-gray-500 truncate">{user.email}</p>
                     </div>
                   </div>
-
-                  <button onClick={() => { router.push('/favorites'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                    <Heart className="w-5 h-5" />Favorites
-                  </button>
-                  <button onClick={() => { router.push('/settings'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                    <Settings className="w-5 h-5" />Settings
-                  </button>
-                  <div className="border-t border-gray-200 my-2" />
-                  <button onClick={() => { router.push('/list-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                    <Key className="w-5 h-5" />My Listing
+                  {[
+                    { icon: Heart, label: 'Favorites', path: '/favorites' },
+                    { icon: Settings, label: 'Settings', path: '/settings' },
+                  ].map(item => (
+                    <button key={item.path} onClick={() => { router.push(item.path); setShowMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-lg text-sm font-medium text-gray-700">
+                      <item.icon className="w-4 h-4 text-gray-400" />{item.label}
+                    </button>
+                  ))}
+                  <div className="border-t border-gray-100 my-1.5" />
+                  <button onClick={() => { router.push('/list-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-lg text-sm font-medium text-gray-700">
+                    <Key className="w-4 h-4 text-gray-400" />My Listing
                   </button>
                   {isAgentChecked && !isAgent && (
-                    <button onClick={() => { router.push('/sell-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                      <Tag className="w-5 h-5" />Sell My Home
+                    <button onClick={() => { router.push('/sell-my-home'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-lg text-sm font-medium text-gray-700">
+                      <Tag className="w-4 h-4 text-gray-400" />Sell My Home
                     </button>
                   )}
                   {isAgentChecked && !isAgent && (
-                    <button onClick={() => { router.push('/become-an-agent'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                      <UserPlus className="w-5 h-5" />Become an Agent
+                    <button onClick={() => { router.push('/become-an-agent'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-lg text-sm font-medium text-gray-700">
+                      <UserPlus className="w-4 h-4 text-gray-400" />Become an Agent
                     </button>
                   )}
-                  <div className="border-t border-gray-200 my-2" />
-                  <button onClick={() => { router.push('/contact'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                    <MessageCircle className="w-5 h-5" />Contact Us
+                  <div className="border-t border-gray-100 my-1.5" />
+                  <button onClick={() => { router.push('/contact'); setShowMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-lg text-sm font-medium text-gray-700">
+                    <MessageCircle className="w-4 h-4 text-gray-400" />Contact Us
                   </button>
-                  <div className="border-t border-gray-200 my-2" />
-                  <button onClick={() => { signOut(); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-red-50 rounded-lg transition-all font-medium text-red-600">
-                    <LogOut className="w-5 h-5" />Sign Out
+                  <div className="border-t border-gray-100 my-1.5" />
+                  <button onClick={() => { signOut(); setShowMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-red-50 rounded-lg text-sm font-medium text-red-600">
+                    <LogOut className="w-4 h-4" />Sign Out
                   </button>
                 </>
               ) : (
                 <>
-                  <button onClick={() => { setShowSignInModal(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-blue-50 rounded-lg transition-all font-semibold text-blue-600">
-                    <User className="w-5 h-5" />Sign In
+                  <button onClick={() => { setShowSignInModal(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-blue-50 rounded-lg text-sm font-semibold text-blue-600">
+                    <User className="w-4 h-4" />Sign In
                   </button>
-                  <div className="border-t border-gray-200 my-2" />
-                  <button onClick={() => { setShowSignInModal(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                    <Heart className="w-5 h-5" />Favorites
-                  </button>
-                  <button onClick={() => { setShowSignInModal(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                    <Key className="w-5 h-5" />My Listing
-                  </button>
-                  <button onClick={() => { setShowSignInModal(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                    <Tag className="w-5 h-5" />Sell My Home
-                  </button>
-                  <button onClick={() => { setShowSignInModal(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700">
-                    <UserPlus className="w-5 h-5" />Become an Agent
-                  </button>
-                  <div className="border-t border-gray-200 my-2" />
+                  <div className="border-t border-gray-100 my-1.5" />
+                  {[
+                    { icon: Heart, label: 'Favorites' },
+                    { icon: Key, label: 'My Listing' },
+                    { icon: Tag, label: 'Sell My Home' },
+                    { icon: UserPlus, label: 'Become an Agent' },
+                  ].map(item => (
+                    <button key={item.label} onClick={() => { setShowSignInModal(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-lg text-sm font-medium text-gray-700">
+                      <item.icon className="w-4 h-4 text-gray-400" />{item.label}
+                    </button>
+                  ))}
+                  <div className="border-t border-gray-100 my-1.5" />
                   <button
                     onClick={() => { setShowMenu(false); setTimeout(() => talkToAgentRef.current?.scrollIntoView({ behavior: 'smooth' }), 300); }}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-all font-medium text-gray-700"
+                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-lg text-sm font-medium text-gray-700"
                   >
-                    <MessageCircle className="w-5 h-5" />Contact Us
+                    <MessageCircle className="w-4 h-4 text-gray-400" />Contact Us
                   </button>
                 </>
               )}

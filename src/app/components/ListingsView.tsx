@@ -138,68 +138,67 @@ export default function ListingsView() {
           />
         </div>
 
-        <div className={`w-full lg:w-1/2 h-full overflow-y-auto bg-gradient-to-br from-gray-50 to-blue-50/30 p-3 lg:p-6 ${mobileView === 'map' ? 'hidden lg:block' : ''}`}>
+        <div className={`w-full lg:w-1/2 h-full overflow-y-auto bg-white flex flex-col ${mobileView === 'map' ? 'hidden lg:block' : ''}`}>
 
-          <div className="mb-4 lg:mb-5 flex items-center justify-between gap-3">
-            <div className="inline-flex items-center gap-2 bg-white px-3 lg:px-4 py-1.5 lg:py-2 rounded-full shadow-md border border-gray-100">
+          {/* Count + sort bar */}
+          <div className="sticky top-0 bg-white z-20 border-b border-gray-100 px-4 py-2.5 flex items-center justify-between gap-4 flex-shrink-0">
+            <span className="text-sm text-gray-500">
               {loadingListings
-                ? <><Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" /><span className="text-gray-500 text-xs lg:text-sm">Loading…</span></>
-                : <><span className="font-semibold text-gray-700 text-sm lg:text-base">{filteredProperties.length}</span><span className="text-gray-500 ml-1 text-xs lg:text-base">properties found</span></>
+                ? <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" />Loading…</span>
+                : <><strong className="text-gray-900 font-semibold">{filteredProperties.length}</strong> homes</>
               }
-            </div>
-
-            <div className="relative">
+            </span>
+            <div className="relative flex items-center gap-1">
+              <span className="text-sm text-gray-400">Sort:</span>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="appearance-none bg-white px-3 lg:px-4 py-1.5 lg:py-2 pr-8 lg:pr-10 rounded-full shadow-md border border-gray-100 text-xs lg:text-sm font-medium text-gray-700 cursor-pointer hover:border-blue-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                className="appearance-none text-sm font-medium text-gray-700 cursor-pointer focus:outline-none pr-4 bg-transparent"
               >
                 <option value="recommended">Recommended</option>
-                <option value="price-low">Price (Low to High)</option>
-                <option value="price-high">Price (High to Low)</option>
-                <option value="beds">Beds</option>
-                <option value="baths">Baths</option>
-                <option value="sqft">Square Feet</option>
+                <option value="price-low">Lowest price</option>
+                <option value="price-high">Highest price</option>
+                <option value="beds">Most beds</option>
+                <option value="baths">Most baths</option>
+                <option value="sqft">Largest</option>
               </select>
-              <ChevronDown className="w-3 h-3 lg:w-4 lg:h-4 text-gray-500 absolute right-2 lg:right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-0 pointer-events-none" />
             </div>
           </div>
 
           {!loadingListings && filteredProperties.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                <Home className="w-8 h-8 text-gray-400" />
+            <div className="flex flex-col items-center justify-center py-20 text-center flex-1">
+              <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                <Home className="w-7 h-7 text-gray-400" />
               </div>
-              <p className="text-gray-600 font-semibold text-lg">No listings found</p>
-              <p className="text-gray-400 text-sm mt-1">Try adjusting your filters or check back later</p>
+              <p className="text-gray-700 font-semibold">No homes found</p>
+              <p className="text-gray-400 text-sm mt-1">Try adjusting your filters or search</p>
             </div>
           ) : (
-            <>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
-                {filteredProperties.map((property) => (
-                  <PropertyCard
-                    key={property.id}
-                    property={property}
-                    onClick={() => setSelectedProperty(property)}
-                    isHovered={hoveredPropertyId === property.id}
-                    onMouseEnter={() => setHoveredPropertyId(property.id)}
-                    onMouseLeave={() => setHoveredPropertyId(null)}
-                    listingMode={listingMode}
-                  />
-                ))}
-              </div>
+            <div className="p-3 pb-24 lg:pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {filteredProperties.map((property) => (
+                <PropertyCard
+                  key={property.id}
+                  property={property}
+                  onClick={() => setSelectedProperty(property)}
+                  isHovered={hoveredPropertyId === property.id}
+                  onMouseEnter={() => setHoveredPropertyId(property.id)}
+                  onMouseLeave={() => setHoveredPropertyId(null)}
+                  listingMode={listingMode}
+                />
+              ))}
               {hasMore && (
-                <div className="flex justify-center mt-6">
+                <div className="col-span-full flex justify-center pt-2 pb-4">
                   <button
                     onClick={loadMore}
                     disabled={loadingMore}
-                    className="flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 rounded-full shadow-md text-sm font-semibold text-gray-700 hover:border-blue-500 hover:text-blue-600 transition-all disabled:opacity-50"
+                    className="flex items-center gap-2 px-8 py-2.5 border border-gray-300 rounded-full text-sm font-medium text-gray-700 hover:border-gray-500 hover:text-gray-900 transition-all disabled:opacity-50"
                   >
-                    {loadingMore ? <><Loader2 className="w-4 h-4 animate-spin" />Loading…</> : 'Load More'}
+                    {loadingMore ? <><Loader2 className="w-4 h-4 animate-spin" />Loading…</> : 'Load more homes'}
                   </button>
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       </div>
@@ -212,16 +211,16 @@ export default function ListingsView() {
 
       <button
         onClick={() => setMobileView(mobileView === 'map' ? 'list' : 'map')}
-        className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-full shadow-2xl hover:shadow-blue-500/50 transition-all flex items-center gap-2 font-semibold"
+        className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white px-5 py-3 rounded-full shadow-xl transition-all flex items-center gap-2 text-sm font-semibold active:scale-95"
       >
         {mobileView === 'map' ? (
           <>
-            <List className="w-5 h-5" />
+            <List className="w-4 h-4" />
             <span>List</span>
           </>
         ) : (
           <>
-            <Map className="w-5 h-5" />
+            <Map className="w-4 h-4" />
             <span>Map</span>
           </>
         )}

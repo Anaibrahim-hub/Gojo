@@ -1,20 +1,13 @@
+'use client'
+
 import React, { useState } from 'react';
-import { Bed, Bath, Maximize, Heart, ChevronLeft, ChevronRight, Share2, Check } from 'lucide-react';
+import { Heart, ChevronLeft, ChevronRight, Share2, Check } from 'lucide-react';
 import { useFavorites } from '@/lib/favorites-context';
 import { formatETB } from '@/app/components/ui/utils';
 
-function getNewBadgeLabel(createdAt?: number): string | null {
-  if (!createdAt) return null;
-  const diffMs = Date.now() - createdAt;
-  const diffHrs = diffMs / (1000 * 60 * 60);
-  if (diffHrs < 1) return 'New just now';
-  if (diffHrs < 24) {
-    const h = Math.floor(diffHrs);
-    return `New ${h} ${h === 1 ? 'hr' : 'hrs'} ago`;
-  }
-  const diffDays = Math.floor(diffHrs / 24);
-  if (diffDays <= 7) return `New ${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
-  return null;
+function isNewListing(createdAt?: number): boolean {
+  if (!createdAt) return false;
+  return (Date.now() - createdAt) / (1000 * 60 * 60 * 24) <= 7;
 }
 
 interface PropertyCardProps {
@@ -37,6 +30,7 @@ interface PropertyCardProps {
     type: 'sale' | 'rent' | 'both';
     createdAt?: number;
     subCity?: string;
+    propertyType?: string;
   };
   onClick: () => void;
   isHovered: boolean;
@@ -55,17 +49,11 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
   const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const url = `${window.location.origin}/listings?q=${encodeURIComponent(property.address)}`;
-    const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-    if (isMobile && navigator.share) {
-      try {
-        await navigator.share({ title: property.address, text: `${property.address}, ${property.city}`, url });
-      } catch { /* user cancelled */ }
+    if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) && navigator.share) {
+      try { await navigator.share({ title: property.address, text: `${property.address}, ${property.city}`, url }); } catch { /* cancelled */ }
       return;
     }
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch {
-      // Fallback for HTTP or restricted contexts
+    try { await navigator.clipboard.writeText(url); } catch {
       const el = document.createElement('textarea');
       el.value = url;
       el.style.cssText = 'position:fixed;opacity:0';
@@ -79,166 +67,174 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
   };
 
   const wantBuy = listingMode === 'buy';
-  const hasSalePrice = property.price > 0;
-  const hasRentPrice = property.rent > 0;
-  const showRent = (!wantBuy || !hasSalePrice) && hasRentPrice;
+  const showRent = (!wantBuy || !property.price) && !!property.rent;
   const displayPrice = showRent ? property.rent : property.price;
-  const priceLabel = showRent ? '/mo' : '';
 
-  const propertyImages = property.photos?.length
-    ? property.photos
-    : [
-        property.image,
-        'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800',
-        'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=800',
-        'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?w=800',
-      ];
+  const images = property.photos?.length ? property.photos : [property.image];
 
-  const nextImage = (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    setCurrentImageIndex((prev) => (prev + 1) % propertyImages.length);
-  };
+  const next = (e?: React.MouseEvent) => { if (e) e.stopPropagation(); setCurrentImageIndex(i => (i + 1) % images.length); };
+  const prev = (e?: React.MouseEvent) => { if (e) e.stopPropagation(); setCurrentImageIndex(i => (i - 1 + images.length) % images.length); };
+  const goTo = (e: React.MouseEvent, idx: number) => { e.stopPropagation(); setCurrentImageIndex(idx); };
 
-  const prevImage = (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    setCurrentImageIndex((prev) => (prev - 1 + propertyImages.length) % propertyImages.length);
-  };
-
-  const goToImage = (e: React.MouseEvent, index: number) => {
+  const onTouchStart = (e: React.TouchEvent) => setTouchStart(e.targetTouches[0].clientX);
+  const onTouchMove = (e: React.TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
+  const onTouchEnd = (e: React.TouchEvent) => {
     e.stopPropagation();
-    setCurrentImageIndex(index);
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStart(e.targetTouches[0].clientX);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    setTouchEnd(e.targetTouches[0].clientX);
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    e.stopPropagation();
-    if (!touchStart || !touchEnd) return;
-
-    const distance = touchStart - touchEnd;
-    const minSwipeDistance = 50;
-
-    if (Math.abs(distance) > minSwipeDistance) {
-      if (distance > 0) {
-        nextImage();
-      } else {
-        prevImage();
-      }
+    if (touchStart && touchEnd && Math.abs(touchStart - touchEnd) > 50) {
+      touchStart - touchEnd > 0 ? next() : prev();
     }
-
-    setTouchStart(0);
-    setTouchEnd(0);
+    setTouchStart(0); setTouchEnd(0);
   };
-
-  const newBadgeLabel = getNewBadgeLabel(property.createdAt);
 
   return (
     <div
-      className={`bg-white rounded-xl overflow-hidden transition-all duration-300 cursor-pointer group ${
-        isHovered ? 'shadow-2xl scale-[1.02] ring-2 ring-blue-500' : 'shadow-md hover:shadow-xl'
+      className={`group bg-white overflow-hidden cursor-pointer transition-all duration-200
+        rounded-2xl shadow-md active:scale-[0.99]
+        lg:rounded-lg lg:active:scale-100 lg:border ${
+        isHovered
+          ? 'lg:shadow-xl lg:border-gray-400'
+          : 'lg:shadow-sm lg:border-gray-200 lg:hover:shadow-lg lg:hover:border-gray-300'
       }`}
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
+      {/* Photo */}
       <div
-        className="relative overflow-hidden group/image"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        className="relative h-60 lg:h-52 overflow-hidden"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
       >
         <img
-          src={propertyImages[currentImageIndex]}
+          src={images[currentImageIndex]}
           alt={property.address}
-          className="w-full h-72 lg:h-64 object-cover transition-transform duration-300 group-hover:scale-105"
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
-        {newBadgeLabel && (
-          <span className="absolute top-3 left-3 z-10 bg-green-800 text-white text-xs font-semibold px-2.5 py-1 rounded-full shadow-lg">
-            {newBadgeLabel}
+        {isNewListing(property.createdAt) && (
+          <span className="absolute top-3 left-3 z-10 bg-green-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+            New
           </span>
         )}
 
-        <div className="absolute top-3 right-3 flex flex-col items-end gap-2 z-10">
+        {/* Heart + Share */}
+        <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-10">
           <button
             onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-            className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
+            className="bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-md hover:bg-white hover:scale-110 transition-all"
           >
-            <Heart className={`w-4 h-4 transition-colors ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+            <Heart className={`w-4 h-4 ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-500'}`} />
           </button>
           <button
             onClick={handleShare}
-            className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white hover:scale-110 transition-all"
+            className="bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-md hover:bg-white hover:scale-110 transition-all"
           >
-            {copied
-              ? <Check className="w-4 h-4 text-green-500" />
-              : <Share2 className="w-4 h-4 text-gray-700" />
-            }
+            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-500" />}
           </button>
         </div>
 
-        {propertyImages.length > 1 && (
+        {/* Mobile: cinematic gradient + price/stats overlay */}
+        <div className="lg:hidden absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none" />
+        <div className="lg:hidden absolute bottom-0 left-0 right-0 px-3.5 pb-3.5 z-10 pointer-events-none">
+          <p className="text-white font-bold text-[17px] leading-tight drop-shadow-sm">
+            {formatETB(displayPrice)}
+            {showRent && <span className="text-sm font-normal opacity-75 ml-0.5">/mo</span>}
+          </p>
+          <div className="flex items-center gap-1.5 text-white/70 text-xs font-medium mt-0.5">
+            <span>{property.beds} bd</span>
+            <span className="text-white/40">·</span>
+            <span>{property.baths} ba</span>
+            {property.sqft > 0 && (
+              <>
+                <span className="text-white/40">·</span>
+                <span>{property.sqft.toLocaleString()} m²</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Nav arrows */}
+        {images.length > 1 && (
           <>
             <button
-              onClick={prevImage}
-              className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-lg hover:bg-white transition-all opacity-0 group-hover/image:opacity-100"
+              onClick={prev}
+              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full shadow transition-all
+                bg-black/30 backdrop-blur-sm p-1.5
+                lg:bg-white/90 lg:p-1 lg:opacity-0 lg:group-hover:opacity-100 lg:backdrop-blur-none lg:shadow-md"
             >
-              <ChevronLeft className="w-4 h-4 text-gray-700" />
+              <ChevronLeft className="w-4 h-4 text-white lg:text-gray-700" />
             </button>
-
             <button
-              onClick={nextImage}
-              className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-lg hover:bg-white transition-all opacity-0 group-hover/image:opacity-100"
+              onClick={next}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full shadow transition-all
+                bg-black/30 backdrop-blur-sm p-1.5
+                lg:bg-white/90 lg:p-1 lg:opacity-0 lg:group-hover:opacity-100 lg:backdrop-blur-none lg:shadow-md"
             >
-              <ChevronRight className="w-4 h-4 text-gray-700" />
+              <ChevronRight className="w-4 h-4 text-white lg:text-gray-700" />
             </button>
 
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-              {propertyImages.map((_, index) => (
+            {/* Mobile: photo count badge */}
+            <div className="lg:hidden absolute bottom-3.5 right-3.5 z-10 bg-black/45 backdrop-blur-sm px-2 py-0.5 rounded-full pointer-events-none">
+              <span className="text-white text-[11px] font-semibold">{currentImageIndex + 1}/{images.length}</span>
+            </div>
+
+            {/* Desktop: dot indicators */}
+            <div className="hidden lg:flex absolute bottom-2.5 left-1/2 -translate-x-1/2 gap-1">
+              {images.map((_, i) => (
                 <button
-                  key={index}
-                  onClick={(e) => goToImage(e, index)}
-                  className={`w-2 h-2 rounded-full transition-all ${
-                    index === currentImageIndex
-                      ? 'bg-white w-6'
-                      : 'bg-white/60 hover:bg-white/80'
-                  }`}
+                  key={i}
+                  onClick={(e) => goTo(e, i)}
+                  className={`h-1.5 rounded-full transition-all ${i === currentImageIndex ? 'bg-white w-4' : 'bg-white/60 w-1.5 hover:bg-white/80'}`}
                 />
               ))}
             </div>
           </>
         )}
       </div>
-      <div className="p-4 lg:p-5">
-        <div className="text-lg lg:text-xl font-bold text-black mb-3">
-          {formatETB(displayPrice)}{priceLabel}
+
+      {/* Mobile: minimal info (price + stats shown in photo overlay) */}
+      <div className="lg:hidden px-3.5 py-2.5">
+        {property.address && (
+          <p className="text-[13px] text-gray-800 font-medium truncate">{property.address}</p>
+        )}
+        <div className="flex items-center justify-between mt-0.5">
+          <p className="text-xs text-gray-400 truncate">
+            {[property.subCity, property.city].filter(Boolean).join(', ')}
+          </p>
+          {property.propertyType && (
+            <span className="text-[11px] text-gray-400 flex-shrink-0 ml-2">{property.propertyType}</span>
+          )}
         </div>
-        <div className="flex items-center gap-3 lg:gap-5 text-gray-600 mb-3 text-xs lg:text-base">
-          <div className="flex items-center gap-1 lg:gap-1.5">
-            <Bed className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-blue-600" />
-            <span className="font-medium">{property.beds} bd</span>
-          </div>
-          <div className="flex items-center gap-1 lg:gap-1.5">
-            <Bath className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-blue-600" />
-            <span className="font-medium">{property.baths} ba</span>
-          </div>
-          <div className="flex items-center gap-1 lg:gap-1.5">
-            <Maximize className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-blue-600" />
-            <span className="font-medium">{property.sqft.toLocaleString()} sqft</span>
-          </div>
+      </div>
+
+      {/* Desktop: full info row (unchanged) */}
+      <div className="hidden lg:block px-3 py-2.5">
+        <p className="text-base font-bold text-gray-900 leading-tight mb-1">
+          {formatETB(displayPrice)}
+          {showRent && <span className="text-sm font-normal text-gray-500 ml-0.5">/mo</span>}
+        </p>
+        <div className="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800 mb-1.5">
+          <span>{property.beds} bd</span>
+          <span className="text-gray-300 font-normal">|</span>
+          <span>{property.baths} ba</span>
+          {property.sqft > 0 && (
+            <>
+              <span className="text-gray-300 font-normal">|</span>
+              <span>{property.sqft.toLocaleString()} m²</span>
+            </>
+          )}
         </div>
         {property.address && (
-          <div className="font-medium text-gray-800 text-sm lg:text-base mb-1">{property.address}</div>
+          <p className="text-[13px] text-gray-600 truncate">{property.address}</p>
         )}
-        <div className="text-gray-500 text-xs lg:text-sm">
-          {[property.subCity, property.city].filter(Boolean).join(', ')}
+        <div className="flex items-center justify-between mt-0.5">
+          <p className="text-xs text-gray-400 truncate">
+            {[property.subCity, property.city].filter(Boolean).join(', ')}
+          </p>
+          {property.propertyType && (
+            <span className="text-[11px] text-gray-400 flex-shrink-0 ml-2">{property.propertyType}</span>
+          )}
         </div>
       </div>
     </div>
