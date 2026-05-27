@@ -270,7 +270,9 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
     onNavigateToMap(searchListingMode, { q: item.text, lat: item.lat, lng: item.lng, zoom: item.zoom });
   };
 
-  const recommendations = apiListings.slice(0, 6);
+  const recommendations = apiListings
+    .filter(p => searchListingMode === 'rent' ? (p.type === 'rent' || p.type === 'both') : (p.type === 'sale' || p.type === 'both'))
+    .slice(0, 6);
   const forSale = apiListings.filter(p => p.type === 'sale' || p.type === 'both');
   const forRent = apiListings.filter(p => p.type === 'rent' || p.type === 'both');
   const saved = apiListings.filter(p => isFavorite(p.id));
@@ -514,7 +516,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       </section>
 
       {/* ── Listing sections ── */}
-      {(loadingListings || recommendations.length > 0) && renderSection('Curated Picks', 'Recommended for You', () => onNavigateToMap(), loadingListings, renderCards(recommendations, 'buy'))}
+      {(loadingListings || recommendations.length > 0) && renderSection('Curated Picks', 'Recommended for You', () => onNavigateToMap(searchListingMode), loadingListings, renderCards(recommendations, searchListingMode))}
       {!loadingListings && recommendations.length > 0 && <div className="border-t border-gray-100 max-w-7xl mx-auto" />}
 
       {(loadingListings || forRent.length > 0) && renderSection('Rentals', 'Homes for Rent', () => onNavigateToMap('rent'), loadingListings, renderCards(forRent, 'rent'))}
