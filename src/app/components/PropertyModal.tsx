@@ -103,77 +103,74 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
             <X className="w-5 h-5 text-gray-700" />
           </button>
 
-          {/* ── Desktop photo grid ── */}
-          <div className="hidden lg:block flex-shrink-0 h-[400px] xl:h-[460px] overflow-hidden">
-            {images.length === 1 ? (
-              <div className="relative h-full cursor-pointer overflow-hidden group" onClick={() => setLightboxIndex(0)}>
-                <img src={images[0]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all" />
-              </div>
-            ) : (
-              <div className={`grid h-full gap-1 ${images.length >= 3 ? 'grid-cols-[3fr_2fr]' : 'grid-cols-2'}`}>
-                <div className="relative h-full cursor-pointer overflow-hidden group" onClick={() => setLightboxIndex(0)}>
-                  <img src={images[0]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
-                </div>
-                <div className="grid grid-rows-2 gap-1 h-full min-h-0 overflow-hidden">
-                  <div className="relative cursor-pointer overflow-hidden group min-h-0" onClick={() => setLightboxIndex(1)}>
-                    <img src={images[1]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
-                  </div>
-                  <div className="relative cursor-pointer overflow-hidden group min-h-0" onClick={() => setLightboxIndex(2)}>
-                    <img src={images[2] ?? images[1]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
-                    {images.length > 3 && (
-                      <div className="absolute inset-0 bg-black/45 flex items-center justify-center gap-2 hover:bg-black/55 transition-all">
-                        <Images className="w-5 h-5 text-white" />
-                        <span className="text-white text-sm font-semibold">+{images.length - 3} more</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ── Mobile photo carousel (cinematic) ── */}
-          <div
-            className="lg:hidden flex-shrink-0 relative h-80"
-            onTouchStart={(e) => setMobileTouchStartX(e.targetTouches[0].clientX)}
-            onTouchEnd={onMobileTouchEnd}
-          >
-            <img
-              src={images[mobilePhotoIndex]}
-              alt="Property"
-              className="w-full h-full object-cover"
-            />
-            {/* Subtle bottom gradient */}
-            <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/45 to-transparent pointer-events-none" />
-
-            {images.length > 1 && (
-              <>
-                <button
-                  onClick={() => setMobilePhotoIndex(i => (i - 1 + images.length) % images.length)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/30 backdrop-blur-sm p-2 rounded-full"
-                >
-                  <ChevronLeft className="w-5 h-5 text-white" />
-                </button>
-                <button
-                  onClick={() => setMobilePhotoIndex(i => (i + 1) % images.length)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/30 backdrop-blur-sm p-2 rounded-full"
-                >
-                  <ChevronRight className="w-5 h-5 text-white" />
-                </button>
-                {/* Photo count badge */}
-                <div className="absolute bottom-3.5 right-3.5 bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-full pointer-events-none">
-                  <span className="text-white text-xs font-semibold">{mobilePhotoIndex + 1} / {images.length}</span>
-                </div>
-              </>
-            )}
-          </div>
-
           {/* ── Scrollable content ── */}
           <div className="flex-1 overflow-y-auto">
+            {/* ── Desktop photo grid — inside scroll so it moves with content ── */}
+            <div className="hidden lg:block h-[400px] xl:h-[460px] overflow-hidden">
+              {images.length === 1 ? (
+                <div className="relative h-full cursor-pointer overflow-hidden group" onClick={() => setLightboxIndex(0)}>
+                  <img src={images[0]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all" />
+                </div>
+              ) : (
+                <div className={`grid h-full gap-1 ${images.length >= 3 ? 'grid-cols-[3fr_2fr]' : 'grid-cols-2'}`}>
+                  <div className="relative h-full cursor-pointer overflow-hidden group" onClick={() => setLightboxIndex(0)}>
+                    <img src={images[0]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
+                  </div>
+                  <div className="grid grid-rows-2 gap-1 h-full min-h-0 overflow-hidden">
+                    <div className="relative cursor-pointer overflow-hidden group min-h-0" onClick={() => setLightboxIndex(1)}>
+                      <img src={images[1]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
+                    </div>
+                    <div className="relative cursor-pointer overflow-hidden group min-h-0" onClick={() => setLightboxIndex(2)}>
+                      <img src={images[2] ?? images[1]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
+                      {images.length > 3 && (
+                        <div className="absolute inset-0 bg-black/45 flex items-center justify-center gap-2 hover:bg-black/55 transition-all">
+                          <Images className="w-5 h-5 text-white" />
+                          <span className="text-white text-sm font-semibold">+{images.length - 3} more</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Mobile photo carousel — inside scroll so it moves with content ── */}
+            <div
+              className="lg:hidden relative h-80"
+              onTouchStart={(e) => setMobileTouchStartX(e.targetTouches[0].clientX)}
+              onTouchEnd={onMobileTouchEnd}
+            >
+              <img
+                src={images[mobilePhotoIndex]}
+                alt="Property"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/45 to-transparent pointer-events-none" />
+              {images.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setMobilePhotoIndex(i => (i - 1 + images.length) % images.length)}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/30 backdrop-blur-sm p-2 rounded-full"
+                  >
+                    <ChevronLeft className="w-5 h-5 text-white" />
+                  </button>
+                  <button
+                    onClick={() => setMobilePhotoIndex(i => (i + 1) % images.length)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/30 backdrop-blur-sm p-2 rounded-full"
+                  >
+                    <ChevronRight className="w-5 h-5 text-white" />
+                  </button>
+                  <div className="absolute bottom-3.5 right-3.5 bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-full pointer-events-none">
+                    <span className="text-white text-xs font-semibold">{mobilePhotoIndex + 1} / {images.length}</span>
+                  </div>
+                </>
+              )}
+            </div>
+
             <div>
               <div className="flex-1 px-5 lg:px-8 py-5 lg:py-6">
 
