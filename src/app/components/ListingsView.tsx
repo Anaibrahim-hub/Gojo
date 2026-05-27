@@ -14,7 +14,8 @@ import { useListings } from '@/lib/listings-context'
 export default function ListingsView() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const initialMode = searchParams.get('mode') === 'rent' ? 'rent' : 'buy'
+  const modeParam = searchParams.get('mode')
+  const initialMode = modeParam === 'rent' ? 'rent' : 'buy'
   const initialQ = searchParams.get('q') ?? ''
   const initialLat = searchParams.get('lat')
   const initialLng = searchParams.get('lng')
@@ -41,15 +42,18 @@ export default function ListingsView() {
   const [hoveredPropertyId, setHoveredPropertyId] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<'map' | 'list'>('list')
   const [listingMode, setListingMode] = useState<'buy' | 'rent'>(initialMode)
+  // When navigating from home page recommendations (no mode param), show all types until user picks one
+  const [showAllTypes, setShowAllTypes] = useState(!modeParam)
   const [sortBy, setSortBy] = useState<'recommended' | 'price-low' | 'price-high' | 'beds' | 'baths' | 'sqft'>('recommended')
   const [showSignInModal, setShowSignInModal] = useState(false)
   const { listings: apiListings, loading: loadingListings, hasMore, loadMore, loadingMore } = useListings()
 
   useEffect(() => {
+    if (showAllTypes) return
     const params = new URLSearchParams(window.location.search)
     params.set('mode', listingMode)
     router.replace(`/listings?${params.toString()}`, { scroll: false })
-  }, [listingMode])
+  }, [listingMode, showAllTypes])
 
   useEffect(() => {
     if (mobileView === 'map') window.dispatchEvent(new Event('resize'))
@@ -66,8 +70,8 @@ export default function ListingsView() {
   const filteredProperties = useMemo(() => {
     const q = searchQuery.toLowerCase().trim()
     const filtered = apiListings.filter((property) => {
-      if (listingMode === 'buy' && property.type === 'rent') return false
-      if (listingMode === 'rent' && property.type === 'sale') return false
+      if (!showAllTypes && listingMode === 'buy' && property.type === 'rent') return false
+      if (!showAllTypes && listingMode === 'rent' && property.type === 'sale') return false
       if (q) {
         const words = q.split(/\s+/).filter(Boolean)
         const haystack = [
@@ -109,7 +113,7 @@ export default function ListingsView() {
       sorted.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
     }
     return sorted
-  }, [filters, listingMode, sortBy, searchQuery, apiListings])
+  }, [filters, listingMode, showAllTypes, sortBy, searchQuery, apiListings])
 
   return (
     <div className="size-full flex flex-col">
@@ -121,7 +125,7 @@ export default function ListingsView() {
         onFilterChange={handleFilterChange}
         onClearFilters={handleClearFilters}
         listingMode={listingMode}
-        onListingModeChange={setListingMode}
+        onListingModeChange={(mode) => { setShowAllTypes(false); setListingMode(mode) }}
         onLogoClick={() => router.push('/')}
         onSignInClick={() => setShowSignInModal(true)}
       />

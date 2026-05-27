@@ -35,63 +35,58 @@ export default function FavoritesView() {
 
   return (
     <div className="size-full flex flex-col">
+
       {/* Header */}
-      <div className="bg-white shadow-lg border-b border-gray-100 px-4 lg:px-6 py-3 lg:py-4 flex items-center gap-3 lg:gap-5 flex-wrap">
+      <div className="bg-white border-b border-gray-100 px-4 lg:px-6 h-14 flex items-center gap-3 flex-shrink-0">
         <button
           onClick={() => router.back()}
-          className="p-2 hover:bg-gray-100 rounded-xl transition-all flex-shrink-0"
+          className="p-1.5 hover:bg-gray-100 rounded-lg transition-all flex-shrink-0"
         >
           <ArrowLeft className="w-5 h-5 text-gray-700" />
         </button>
 
-        <div className="flex items-center gap-2">
-          <Heart className="w-5 h-5 text-red-500 fill-red-500" />
-          <span className="text-xl lg:text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-            Favorites
-          </span>
+        <div className="flex items-center gap-2 flex-1">
+          <Heart className="w-4 h-4 text-red-500 fill-red-500" />
+          <span className="text-base font-bold text-gray-900">Saved Homes</span>
         </div>
 
         {/* Buy / Rent toggle */}
-        <div className="flex bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-1.5 gap-1 shadow-inner ml-auto">
+        <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5 flex-shrink-0">
           <button
             onClick={() => setListingMode('buy')}
-            className={`flex items-center gap-2 px-4 lg:px-5 py-2.5 rounded-lg transition-all text-sm lg:text-base font-medium ${
-              listingMode === 'buy'
-                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30'
-                : 'text-gray-600 hover:text-gray-900'
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all text-sm font-semibold ${
+              listingMode === 'buy' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            <Home className="w-4 h-4" />Buy
+            <Home className="w-3.5 h-3.5" />Buy
           </button>
           <button
             onClick={() => setListingMode('rent')}
-            className={`flex items-center gap-2 px-4 lg:px-5 py-2.5 rounded-lg transition-all text-sm lg:text-base font-medium ${
-              listingMode === 'rent'
-                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30'
-                : 'text-gray-600 hover:text-gray-900'
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all text-sm font-semibold ${
+              listingMode === 'rent' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            <Key className="w-4 h-4" />Rent
+            <Key className="w-3.5 h-3.5" />Rent
           </button>
         </div>
       </div>
 
       {loadingListings ? (
         <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          <Loader2 className="w-7 h-7 text-gray-400 animate-spin" />
         </div>
       ) : favoriteProperties.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
-          <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-5">
-            <Heart className="w-9 h-9 text-gray-300" />
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-5">
+            <Heart className="w-7 h-7 text-gray-300" />
           </div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">No saved listings yet</h2>
-          <p className="text-gray-500 mb-6 max-w-xs">
-            Tap the heart on any listing to save it here for easy access later.
+          <h2 className="text-lg font-bold text-gray-900 mb-1.5">No saved homes yet</h2>
+          <p className="text-sm text-gray-400 mb-7 max-w-xs leading-relaxed">
+            Tap the heart on any listing to save it here for easy access.
           </p>
           <button
             onClick={() => router.back()}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all shadow-md"
+            className="px-6 py-2.5 bg-gray-900 hover:bg-gray-800 active:bg-black text-white rounded-full text-sm font-semibold transition-all"
           >
             Browse Listings
           </button>
@@ -111,31 +106,32 @@ export default function FavoritesView() {
           </div>
 
           {/* Property list */}
-          <div className={`w-full lg:w-1/2 h-full overflow-y-auto bg-gradient-to-br from-gray-50 to-blue-50/30 p-3 lg:p-6 ${mobileView === 'map' ? 'hidden lg:block' : ''}`}>
-            <div className="mb-4 lg:mb-5 flex items-center justify-between gap-3">
-              <div className="inline-block bg-white px-3 lg:px-4 py-1.5 lg:py-2 rounded-full shadow-md border border-gray-100">
-                <span className="font-semibold text-gray-700 text-sm lg:text-base">{sorted.length}</span>
-                <span className="text-gray-500 ml-1 text-xs lg:text-base">saved</span>
-              </div>
+          <div className={`w-full lg:w-1/2 h-full overflow-y-auto bg-white flex flex-col ${mobileView === 'map' ? 'hidden lg:block' : ''}`}>
 
-              <div className="relative">
+            {/* Count + sort bar */}
+            <div className="sticky top-0 bg-white z-20 border-b border-gray-100 px-4 py-2.5 flex items-center justify-between gap-4 flex-shrink-0">
+              <span className="text-sm text-gray-500">
+                <strong className="text-gray-900 font-semibold">{sorted.length}</strong> saved
+              </span>
+              <div className="relative flex items-center gap-1">
+                <span className="text-sm text-gray-400">Sort:</span>
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                  className="appearance-none bg-white px-3 lg:px-4 py-1.5 lg:py-2 pr-8 lg:pr-10 rounded-full shadow-md border border-gray-100 text-xs lg:text-sm font-medium text-gray-700 cursor-pointer hover:border-blue-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                  className="appearance-none text-sm font-medium text-gray-700 cursor-pointer focus:outline-none pr-4 bg-transparent"
                 >
                   <option value="recommended">Recommended</option>
-                  <option value="price-low">Price (Low to High)</option>
-                  <option value="price-high">Price (High to Low)</option>
-                  <option value="beds">Beds</option>
-                  <option value="baths">Baths</option>
-                  <option value="sqft">Square Feet</option>
+                  <option value="price-low">Lowest price</option>
+                  <option value="price-high">Highest price</option>
+                  <option value="beds">Most beds</option>
+                  <option value="baths">Most baths</option>
+                  <option value="sqft">Largest</option>
                 </select>
-                <ChevronDown className="w-3 h-3 lg:w-4 lg:h-4 text-gray-500 absolute right-2 lg:right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-0 pointer-events-none" />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
+            <div className="p-3 pb-24 lg:pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
               {sorted.map((property) => (
                 <PropertyCard
                   key={property.id}
@@ -161,12 +157,12 @@ export default function FavoritesView() {
       {favoriteProperties.length > 0 && (
         <button
           onClick={() => setMobileView(mobileView === 'map' ? 'list' : 'map')}
-          className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-full shadow-2xl hover:shadow-blue-500/50 transition-all flex items-center gap-2 font-semibold"
+          className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white px-5 py-3 rounded-full shadow-xl transition-all flex items-center gap-2 text-sm font-semibold active:scale-95"
         >
           {mobileView === 'map' ? (
-            <><List className="w-5 h-5" /><span>List</span></>
+            <><List className="w-4 h-4" /><span>List</span></>
           ) : (
-            <><Map className="w-5 h-5" /><span>Map</span></>
+            <><Map className="w-4 h-4" /><span>Map</span></>
           )}
         </button>
       )}
