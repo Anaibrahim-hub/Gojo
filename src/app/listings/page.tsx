@@ -1,5 +1,12 @@
+import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import ListingsView from '../components/ListingsView'
+
+export const metadata: Metadata = {
+  title: 'Property Listings in Ethiopia | Yevilla',
+  description: 'Browse homes, apartments, and commercial properties for sale and rent across Ethiopia. Filter by location, price, and type on Yevilla.',
+  alternates: { canonical: '/listings' },
+}
 
 export default function ListingsPage() {
   return (
