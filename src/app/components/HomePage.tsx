@@ -59,10 +59,10 @@ function PropertyCarouselCard({
   const image = property.photos?.[0] ?? property.image;
   return (
     <div
-      className="flex-shrink-0 w-60 lg:w-72 cursor-pointer group snap-start"
+      className="flex-shrink-0 w-64 lg:w-80 cursor-pointer group snap-start"
       onClick={onClick}
     >
-      <div className="relative h-44 lg:h-52 overflow-hidden rounded-xl mb-2.5 shadow-md group-hover:shadow-xl transition-shadow duration-300">
+      <div className="relative h-56 lg:h-72 overflow-hidden rounded-xl mb-2.5 shadow-md group-hover:shadow-xl transition-shadow duration-300">
         <img
           src={image}
           alt={property.address}

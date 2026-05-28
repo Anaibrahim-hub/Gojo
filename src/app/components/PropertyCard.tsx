@@ -101,7 +101,7 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
     >
       {/* Photo */}
       <div
-        className="relative h-60 lg:h-52 overflow-hidden"
+        className="relative h-64 lg:h-80 overflow-hidden"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
