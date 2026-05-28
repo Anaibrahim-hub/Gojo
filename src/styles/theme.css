@@ -79,6 +79,14 @@
 }
 
 @theme inline {
+  /* ── Card sizing tokens — change these to resize all cards at once ── */
+  --spacing-card-img-sm: 13rem;       /* 208px — grid card image, mobile   */
+  --spacing-card-img-lg: 16rem;       /* 256px — grid card image, desktop  */
+  --spacing-carousel-w-sm: 15rem;     /* 240px — carousel card width, mobile  */
+  --spacing-carousel-w-lg: 17.5rem;   /* 280px — carousel card width, desktop */
+  --spacing-carousel-img-sm: 10rem;   /* 160px — carousel image, mobile    */
+  --spacing-carousel-img-lg: 11.5rem; /* 184px — carousel image, desktop   */
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

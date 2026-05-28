@@ -140,7 +140,8 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
 
             {/* ── Mobile photo carousel — inside scroll so it moves with content ── */}
             <div
-              className="lg:hidden relative h-80"
+              className="lg:hidden relative h-80 cursor-pointer"
+              onClick={() => setLightboxIndex(mobilePhotoIndex)}
               onTouchStart={(e) => setMobileTouchStartX(e.targetTouches[0].clientX)}
               onTouchEnd={onMobileTouchEnd}
             >
@@ -150,16 +151,20 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
                 className="w-full h-full object-cover"
               />
               <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/45 to-transparent pointer-events-none" />
+              {/* Expand hint */}
+              <div className="absolute top-3 right-3 bg-black/35 backdrop-blur-sm p-1.5 rounded-full pointer-events-none">
+                <Maximize className="w-4 h-4 text-white" />
+              </div>
               {images.length > 1 && (
                 <>
                   <button
-                    onClick={() => setMobilePhotoIndex(i => (i - 1 + images.length) % images.length)}
+                    onClick={e => { e.stopPropagation(); setMobilePhotoIndex(i => (i - 1 + images.length) % images.length); }}
                     className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/30 backdrop-blur-sm p-2 rounded-full"
                   >
                     <ChevronLeft className="w-5 h-5 text-white" />
                   </button>
                   <button
-                    onClick={() => setMobilePhotoIndex(i => (i + 1) % images.length)}
+                    onClick={e => { e.stopPropagation(); setMobilePhotoIndex(i => (i + 1) % images.length); }}
                     className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/30 backdrop-blur-sm p-2 rounded-full"
                   >
                     <ChevronRight className="w-5 h-5 text-white" />
@@ -340,7 +345,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
           <button onClick={e => { e.stopPropagation(); prevLightbox(); }} className="absolute left-4 text-white p-3 hover:bg-white/10 rounded-full transition-all">
             <ChevronLeft className="w-7 h-7" />
           </button>
-          <div className="max-w-6xl max-h-[90vh] w-full px-16" onClick={e => e.stopPropagation()}>
+          <div className="max-w-6xl max-h-[90vh] w-full px-10 lg:px-16" onClick={e => e.stopPropagation()}>
             <img
               src={images[lightboxIndex]}
               alt={`Photo ${lightboxIndex + 1}`}
