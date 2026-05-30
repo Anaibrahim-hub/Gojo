@@ -4,6 +4,7 @@ import FavoritesView from '@/app/components/FavoritesView'
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
+  alternates: { canonical: '/favorites' },
 }
 
 export default function FavoritesPage() {

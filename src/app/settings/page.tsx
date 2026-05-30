@@ -4,6 +4,7 @@ import SettingsView from '@/app/components/SettingsView'
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
+  alternates: { canonical: '/settings' },
 }
 
 export default function SettingsPage() {
