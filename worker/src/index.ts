@@ -287,6 +287,11 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
 
   const now = Date.now()
   const agent = await isAgent(uid, env)
+
+  if (!agent && body.listingType === 'sale') {
+    return jsonErr(403, 'Only agents can post sale listings', origin, env)
+  }
+
   const listingId = typeof body.listingId === 'string' && body.listingId.length > 0
     ? body.listingId
     : null

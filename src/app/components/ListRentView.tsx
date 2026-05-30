@@ -435,23 +435,25 @@ export default function ListRentView() {
         <div className="flex-1 overflow-y-auto bg-gray-50 px-4 py-6 lg:px-6">
           <div className="max-w-2xl mx-auto space-y-4">
 
-            {/* Listing type toggle */}
-            <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
-              {(['rent', 'sale'] as const).map(type => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => setForm(prev => ({ ...prev, listingType: type }))}
-                  className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-                    form.listingType === type
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {type === 'rent' ? 'For Rent' : 'For Sale'}
-                </button>
-              ))}
-            </div>
+            {/* Listing type toggle — agents only see For Sale */}
+            {isAgent && (
+              <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+                {(['rent', 'sale'] as const).map(type => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setForm(prev => ({ ...prev, listingType: type }))}
+                    className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${
+                      form.listingType === type
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {type === 'rent' ? 'For Rent' : 'For Sale'}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Photos */}
             <div className="bg-white rounded-2xl p-5 border border-gray-100">
