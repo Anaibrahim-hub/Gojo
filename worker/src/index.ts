@@ -255,7 +255,7 @@ async function handleGetListing(request: Request, env: Env, origin: string): Pro
   }
   const listings = results.map(r => ({
     ...rowToListing(r, true),
-    likeCount: likeMap.get(uidToNumId(r.id)) ?? 0,
+    favoriteCount: likeMap.get(uidToNumId(r.id)) ?? 0,
   }))
 
   return json({ listings, isAgent: agent }, 200, origin, env)
