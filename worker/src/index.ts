@@ -1,9 +1,11 @@
-import type { R2Bucket, ExecutionContext, D1Database, KVNamespace } from '@cloudflare/workers-types'
+import type { R2Bucket, ExecutionContext, D1Database, KVNamespace, ScheduledEvent } from '@cloudflare/workers-types'
 
 export interface Env {
   GOJO_LISTINGS: R2Bucket
   DB: D1Database
   RATE_LIMITER: KVNamespace
+  PUSH_TOKENS: KVNamespace     // uid → ExponentPushToken[...]
+  SAVED_SEARCHES: KVNamespace  // uid → JSON array of search criteria
   FIREBASE_PROJECT_ID: string
   R2_PUBLIC_URL: string      // e.g. https://pub-xxx.r2.dev  (no trailing slash)
   ALLOWED_ORIGIN: string     // e.g. https://yevilla.com
@@ -50,12 +52,6 @@ const MAX_IMAGE_SIZE = 10 * 1024 * 1024
 
 // ── DB row / body types ───────────────────────────────────────────────────────
 
-// Mirror of the client-side uidToNumId — must stay in sync
-function uidToNumId(uid: string): number {
-  let h = 0
-  for (let i = 0; i < uid.length; i++) h = (Math.imul(31, h) + uid.charCodeAt(i)) | 0
-  return Math.abs(h) + 1000
-}
 
 interface ListingRow {
   id: string
@@ -112,9 +108,29 @@ interface ListingBody {
   photos?: { url: string; key: string }[]
 }
 
+interface ReportRow {
+  id: string
+  target_type: string
+  target_id: string
+  reporter_uid: string
+  reporter_email: string | null
+  reason: string
+  details: string | null
+  status: string
+  created_at: number
+  resolved_at: number | null
+  resolved_by: string | null
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 export default {
+  async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+    await env.DB.prepare('DELETE FROM notifications WHERE created_at < ?')
+      .bind(oneWeekAgo).run()
+  },
+
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const origin = request.headers.get('Origin') ?? ''
 
@@ -146,6 +162,18 @@ export default {
         if (request.method === 'GET') return await handleGetFavorites(request, env, origin)
         if (request.method === 'PUT') return await handleSetFavorites(request, env, origin)
         if (request.method === 'PATCH') return await handlePatchFavorite(request, env, origin)
+      }
+      if (pathname === '/push-token' && request.method === 'POST') {
+        return await handleRegisterPushToken(request, env, origin)
+      }
+      if (pathname === '/saved-search' && request.method === 'POST') {
+        return await handleSaveSavedSearch(request, env, origin)
+      }
+      if (pathname === '/notifications' && request.method === 'GET') {
+        return await handleGetNotifications(request, env, origin)
+      }
+      if (pathname === '/notifications/read' && request.method === 'PATCH') {
+        return await handleMarkNotificationsRead(request, env, origin)
       }
       if (pathname === '/contact' && request.method === 'GET') {
         return await handleGetContact(request, env, origin)
@@ -180,6 +208,15 @@ export default {
       }
       if (pathname === '/admin/staff/check' && request.method === 'POST') {
         return await handleAdminCheckStaff(request, env, origin)
+      }
+      if (pathname === '/report' && request.method === 'POST') {
+        return await handleCreateReport(request, env, origin)
+      }
+      if (pathname === '/admin/reports' && request.method === 'GET') {
+        return await handleAdminGetReports(request, env, origin)
+      }
+      if (pathname.startsWith('/admin/reports/') && request.method === 'PATCH') {
+        return await handleAdminUpdateReport(request, env, origin, pathname)
       }
     } catch (err) {
       console.error(err)
@@ -244,18 +281,18 @@ async function handleGetListing(request: Request, env: Env, origin: string): Pro
     isAgent(uid, env),
   ])
 
-  const numIds = results.map(r => uidToNumId(r.id))
-  let likeMap = new Map<number, number>()
-  if (numIds.length > 0) {
-    const placeholders = numIds.map(() => '?').join(',')
+  const listingIds = results.map(r => r.id)
+  let likeMap = new Map<string, number>()
+  if (listingIds.length > 0) {
+    const placeholders = listingIds.map(() => '?').join(',')
     const { results: likeCounts } = await env.DB.prepare(
       `SELECT property_id, COUNT(*) as cnt FROM favorites WHERE property_id IN (${placeholders}) GROUP BY property_id`
-    ).bind(...numIds).all<{ property_id: number; cnt: number }>()
+    ).bind(...listingIds).all<{ property_id: string; cnt: number }>()
     likeMap = new Map(likeCounts.map(r => [r.property_id, r.cnt]))
   }
   const listings = results.map(r => ({
     ...rowToListing(r, true),
-    favoriteCount: likeMap.get(uidToNumId(r.id)) ?? 0,
+    favoriteCount: likeMap.get(r.id) ?? 0,
   }))
 
   return json({ listings, isAgent: agent }, 200, origin, env)
@@ -296,6 +333,9 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
     ? body.listingId
     : null
 
+  // Capture existing listing data before any edit so we can detect price drops
+  let oldListingBeforeEdit: ReturnType<typeof rowToListing> | null = null
+
   if (listingId) {
     // Edit mode: update an existing listing — verify ownership
     const existing = await env.DB.prepare(
@@ -303,6 +343,11 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
     ).bind(listingId, uid).first<{ id: string; status: string }>()
 
     if (!existing) return jsonErr(404, 'Listing not found', origin, env)
+
+    // Snapshot before update so we can detect a price drop after saving
+    const oldRow = await env.DB.prepare('SELECT * FROM listings WHERE id = ?')
+      .bind(listingId).first<ListingRow>()
+    if (oldRow) oldListingBeforeEdit = rowToListing(oldRow, false)
 
     // Agents keep 'published'; regular user edits stay in their current status
     const newStatus = agent ? 'published' : existing.status
@@ -489,7 +534,20 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
   }
 
   if (!saved) return jsonErr(500, 'Failed to retrieve saved listing', origin, env)
-  return json(rowToListing(saved, true), 200, origin, env)
+
+  const savedListing = rowToListing(saved, true)
+
+  // Notification #3: new published listing → match against saved searches
+  if (!listingId && saved.status === 'published') {
+    notifyMatchingSavedSearches(savedListing, env).catch(() => {})
+  }
+
+  // Notification #4: price dropped on an edited listing
+  if (listingId && oldListingBeforeEdit) {
+    notifyPriceDrop(oldListingBeforeEdit, savedListing, env).catch(() => {})
+  }
+
+  return json(savedListing, 200, origin, env)
 }
 
 // ── Listing: DELETE ───────────────────────────────────────────────────────────
@@ -631,7 +689,7 @@ async function handleGetFavorites(request: Request, env: Env, origin: string): P
 
   const { results } = await env.DB.prepare(
     'SELECT property_id FROM favorites WHERE user_id = ?'
-  ).bind(uid).all<{ property_id: number }>()
+  ).bind(uid).all<{ property_id: string }>()
 
   return json({ ids: results.map(r => r.property_id) }, 200, origin, env)
 }
@@ -658,7 +716,7 @@ async function handleSetFavorites(request: Request, env: Env, origin: string): P
   }
 
   const ids = (body.ids as unknown[])
-    .filter((id): id is number => typeof id === 'number' && Number.isInteger(id))
+    .filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= 128)
 
   await env.DB.batch([
     env.DB.prepare('DELETE FROM favorites WHERE user_id = ?').bind(uid),
@@ -690,14 +748,27 @@ async function handlePatchFavorite(request: Request, env: Env, origin: string): 
   if (body.action !== 'add' && body.action !== 'remove') {
     return jsonErr(400, 'action must be "add" or "remove"', origin, env)
   }
-  if (typeof body.id !== 'number' || !Number.isInteger(body.id)) {
-    return jsonErr(400, 'id must be an integer', origin, env)
+  if (typeof body.id !== 'string' || body.id.length === 0 || body.id.length > 128) {
+    return jsonErr(400, 'id must be a non-empty string', origin, env)
   }
 
   if (body.action === 'add') {
     await env.DB.prepare(
       'INSERT OR IGNORE INTO favorites (user_id, property_id) VALUES (?, ?)'
     ).bind(uid, body.id).run()
+
+    // Notify the listing owner (fire-and-forget)
+    const listing = await env.DB.prepare(
+      'SELECT owner_id, city, property_type FROM listings WHERE id = ?'
+    ).bind(body.id).first<{ owner_id: string; city: string; property_type: string }>()
+    if (listing && listing.owner_id !== uid) {
+      notifyUser(
+        env, listing.owner_id,
+        'Someone saved your listing',
+        `Your ${listing.property_type} in ${listing.city} was added to a buyer's favorites.`,
+        body.id as string,
+      ).catch(() => {})
+    }
   } else {
     await env.DB.prepare(
       'DELETE FROM favorites WHERE user_id = ? AND property_id = ?'
@@ -730,11 +801,33 @@ async function handleApproveListing(request: Request, env: Env, origin: string):
   }
 
   const newStatus = body.action === 'approve' ? 'published' : 'rejected'
-  const result = await env.DB.prepare(
-    'UPDATE listings SET status = ?, updated_at = ? WHERE id = ?'
-  ).bind(newStatus, Date.now(), body.listingId).run()
+
+  const [result, listingRow] = await Promise.all([
+    env.DB.prepare('UPDATE listings SET status = ?, updated_at = ? WHERE id = ?')
+      .bind(newStatus, Date.now(), body.listingId).run(),
+    env.DB.prepare('SELECT owner_id, city, property_type FROM listings WHERE id = ?')
+      .bind(body.listingId).first<{ owner_id: string; city: string; property_type: string }>(),
+  ])
 
   if (result.meta.changes === 0) return jsonErr(404, 'Listing not found', origin, env)
+
+  if (listingRow) {
+    if (newStatus === 'published') {
+      await notifyUser(
+        env, listingRow.owner_id,
+        'Listing Approved',
+        `Your ${listingRow.property_type} in ${listingRow.city} is now live.`,
+        body.listingId as string,
+      )
+    } else {
+      await notifyUser(
+        env, listingRow.owner_id,
+        'Listing Needs Changes',
+        `Your ${listingRow.property_type} in ${listingRow.city} was not approved. Tap to review.`,
+        body.listingId as string,
+      )
+    }
+  }
 
   return json({ listingId: body.listingId, status: newStatus }, 200, origin, env)
 }
@@ -981,6 +1074,201 @@ async function handleAdminGetStats(request: Request, env: Env, origin: string): 
     userListings: userListings?.count ?? 0,
     agentListings: agentListings?.count ?? 0,
   }, 200, origin, env)
+}
+
+// ── Push notifications ────────────────────────────────────────────────────────
+
+async function sendPushNotification(
+  token: string,
+  title: string,
+  body: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  await fetch('https://exp.host/--/api/v2/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ to: token, title, body, data, sound: 'default' }),
+  }).catch(() => { /* non-fatal */ })
+}
+
+async function createNotification(
+  env: Env,
+  userId: string,
+  title: string,
+  body: string,
+  listingId?: string,
+): Promise<void> {
+  const id = crypto.randomUUID()
+  await env.DB.prepare(
+    'INSERT INTO notifications (id, user_id, title, body, listing_id, read, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)'
+  ).bind(id, userId, title, body, listingId ?? null, Date.now()).run()
+}
+
+async function notifyUser(
+  env: Env,
+  userId: string,
+  title: string,
+  body: string,
+  listingId?: string,
+): Promise<void> {
+  await createNotification(env, userId, title, body, listingId)
+  const token = await env.PUSH_TOKENS.get(userId)
+  if (token) {
+    await sendPushNotification(token, title, body, listingId ? { listingId } : {})
+  }
+}
+
+async function handleGetNotifications(request: Request, env: Env, origin: string): Promise<Response> {
+  const uid = await authenticate(request, env)
+  if (!uid) return jsonErr(401, 'Unauthorized', origin, env)
+
+  const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+
+  // Purge expired notifications (fire-and-forget)
+  env.DB.prepare('DELETE FROM notifications WHERE user_id = ? AND created_at < ?')
+    .bind(uid, oneWeekAgo).run().catch(() => {})
+
+  const { results } = await env.DB.prepare(
+    'SELECT id, title, body, listing_id, read, created_at FROM notifications WHERE user_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 50'
+  ).bind(uid, oneWeekAgo).all<{
+    id: string; title: string; body: string
+    listing_id: string | null; read: number; created_at: number
+  }>()
+
+  return json(results.map(r => ({
+    id: r.id,
+    title: r.title,
+    body: r.body,
+    listingId: r.listing_id,
+    read: r.read === 1,
+    createdAt: r.created_at,
+  })), 200, origin, env)
+}
+
+async function handleMarkNotificationsRead(request: Request, env: Env, origin: string): Promise<Response> {
+  const uid = await authenticate(request, env)
+  if (!uid) return jsonErr(401, 'Unauthorized', origin, env)
+
+  let body: { ids?: unknown }
+  try { body = await request.json() as { ids?: unknown } }
+  catch { return jsonErr(400, 'Invalid JSON', origin, env) }
+
+  if (Array.isArray(body.ids) && body.ids.length > 0) {
+    // Mark specific notifications read
+    const ids = (body.ids as unknown[]).filter((id): id is string => typeof id === 'string')
+    const placeholders = ids.map(() => '?').join(',')
+    await env.DB.prepare(
+      `UPDATE notifications SET read = 1 WHERE user_id = ? AND id IN (${placeholders})`
+    ).bind(uid, ...ids).run()
+  } else {
+    // Mark all read
+    await env.DB.prepare('UPDATE notifications SET read = 1 WHERE user_id = ?').bind(uid).run()
+  }
+
+  return json({ ok: true }, 200, origin, env)
+}
+
+async function handleRegisterPushToken(request: Request, env: Env, origin: string): Promise<Response> {
+  const uid = await authenticate(request, env)
+  if (!uid) return jsonErr(401, 'Unauthorized', origin, env)
+
+  let body: { token: unknown }
+  try { body = await request.json() as { token: unknown } }
+  catch { return jsonErr(400, 'Invalid JSON', origin, env) }
+
+  if (typeof body.token !== 'string' || !body.token.startsWith('ExponentPushToken[')) {
+    return jsonErr(400, 'Invalid push token', origin, env)
+  }
+
+  await env.PUSH_TOKENS.put(uid, body.token)
+  return json({ ok: true }, 200, origin, env)
+}
+
+async function handleSaveSavedSearch(request: Request, env: Env, origin: string): Promise<Response> {
+  const uid = await authenticate(request, env)
+  if (!uid) return jsonErr(401, 'Unauthorized', origin, env)
+
+  let body: { city?: unknown; listingType?: unknown; propertyType?: unknown; minBeds?: unknown; maxPrice?: unknown }
+  try { body = await request.json() as typeof body }
+  catch { return jsonErr(400, 'Invalid JSON', origin, env) }
+
+  const search = {
+    city:         typeof body.city === 'string' ? body.city.trim() : undefined,
+    listingType:  typeof body.listingType === 'string' ? body.listingType : 'all',
+    propertyType: typeof body.propertyType === 'string' ? body.propertyType : undefined,
+    minBeds:      typeof body.minBeds === 'number' ? body.minBeds : undefined,
+    maxPrice:     typeof body.maxPrice === 'string' ? body.maxPrice : undefined,
+  }
+
+  await env.SAVED_SEARCHES.put(uid, JSON.stringify([search]))
+  return json({ ok: true }, 200, origin, env)
+}
+
+async function notifyMatchingSavedSearches(
+  listing: ReturnType<typeof rowToListing>,
+  env: Env,
+): Promise<void> {
+  const { keys } = await env.SAVED_SEARCHES.list()
+  await Promise.allSettled(
+    keys.map(async ({ name: uid }) => {
+      if (uid === listing.id) return // listing.id === owner_id for regular users
+      const raw = await env.SAVED_SEARCHES.get(uid)
+      if (!raw) return
+      const searches = safeParseJSON<Array<{
+        city?: string; listingType?: string; propertyType?: string
+        minBeds?: number; maxPrice?: string
+      }>>(raw, [])
+      const matches = searches.some((s) => {
+        if (s.city && !listing.city.toLowerCase().includes(s.city.toLowerCase())) return false
+        if (s.listingType && s.listingType !== 'all' && listing.listingType !== s.listingType) return false
+        if (s.propertyType && listing.propertyType !== s.propertyType) return false
+        if (s.minBeds && (listing.bedrooms ?? 0) < s.minBeds) return false
+        const price = listing.listingType === 'rent' ? listing.monthlyRent : listing.salePrice
+        if (s.maxPrice && price && price > Number(s.maxPrice)) return false
+        return true
+      })
+      if (!matches) return
+      const priceStr = listing.listingType === 'rent'
+        ? `ETB ${listing.monthlyRent?.toLocaleString()}/mo`
+        : `ETB ${listing.salePrice?.toLocaleString()}`
+      await notifyUser(
+        env, uid,
+        'New listing matches your search',
+        `${listing.propertyType} in ${listing.city} — ${priceStr}`,
+        listing.id,
+      )
+    }),
+  )
+}
+
+async function notifyPriceDrop(
+  oldListing: ReturnType<typeof rowToListing>,
+  newListing: ReturnType<typeof rowToListing>,
+  env: Env,
+): Promise<void> {
+  const oldPrice = oldListing.listingType === 'rent' ? oldListing.monthlyRent : oldListing.salePrice
+  const newPrice = newListing.listingType === 'rent' ? newListing.monthlyRent : newListing.salePrice
+  if (!oldPrice || !newPrice || newPrice >= oldPrice) return
+
+  const { results } = await env.DB.prepare(
+    'SELECT user_id FROM favorites WHERE property_id = ?'
+  ).bind(newListing.id).all<{ user_id: string }>()
+
+  const priceStr = newListing.listingType === 'rent'
+    ? `ETB ${newPrice.toLocaleString()}/mo`
+    : `ETB ${newPrice.toLocaleString()}`
+
+  await Promise.allSettled(
+    results.map(async ({ user_id }) => {
+      if (user_id === newListing.id) return // don't notify owner
+      await notifyUser(
+        env, user_id,
+        'Price drop on a saved listing',
+        `Now ${priceStr} — ${newListing.propertyType} in ${newListing.city}`,
+        newListing.id,
+      )
+    }),
+  )
 }
 
 // ── Contact info: GET (public) ────────────────────────────────────────────────
@@ -1421,6 +1709,105 @@ async function handleAdminDeleteStaff(request: Request, env: Env, origin: string
   const result = await env.DB.prepare('DELETE FROM staff WHERE id = ?').bind(body.id).run()
   if (result.meta.changes === 0) return jsonErr(404, 'Staff member not found', origin, env)
   return json({ deleted: body.id }, 200, origin, env)
+}
+
+// ── Reports: POST /report ─────────────────────────────────────────────────────
+
+async function handleCreateReport(request: Request, env: Env, origin: string): Promise<Response> {
+  const uid = await authenticate(request, env)
+  if (!uid) return jsonErr(401, 'Unauthorized', origin, env)
+
+  if (!await rateLimit(env, `write:${uid}`, RATE_LIMITS.write)) {
+    return jsonErr(429, 'Too many requests — please slow down', origin, env)
+  }
+
+  let body: { targetType?: unknown; targetId?: unknown; reason?: unknown; details?: unknown }
+  try {
+    body = await request.json() as { targetType?: unknown; targetId?: unknown; reason?: unknown; details?: unknown }
+  } catch {
+    return jsonErr(400, 'Invalid JSON body', origin, env)
+  }
+
+  if (body.targetType !== 'listing' && body.targetType !== 'user') {
+    return jsonErr(400, 'targetType must be listing or user', origin, env)
+  }
+  if (typeof body.targetId !== 'string' || body.targetId.length === 0 || body.targetId.length > 128) {
+    return jsonErr(400, 'targetId must be a non-empty string (max 128 chars)', origin, env)
+  }
+  const validReasons = new Set(['spam', 'misleading', 'unavailable', 'copyright'])
+  if (typeof body.reason !== 'string' || !validReasons.has(body.reason)) {
+    return jsonErr(400, 'reason must be one of: spam, misleading, unavailable, copyright', origin, env)
+  }
+
+  const details = typeof body.details === 'string'
+    ? body.details.trim().slice(0, 500) || null
+    : null
+
+  const id = crypto.randomUUID()
+  const now = Date.now()
+
+  await env.DB.prepare(`
+    INSERT INTO reports (id, target_type, target_id, reporter_uid, reporter_email, reason, details, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+  `).bind(id, body.targetType, body.targetId, uid, null, body.reason, details, now).run()
+
+  return json({ ok: true, id }, 201, origin, env)
+}
+
+// ── Admin: GET /admin/reports ─────────────────────────────────────────────────
+
+async function handleAdminGetReports(request: Request, env: Env, origin: string): Promise<Response> {
+  const secret = request.headers.get('X-Admin-Secret')
+  if (!secret || secret !== env.ADMIN_SECRET) return jsonErr(401, 'Unauthorized', origin, env)
+
+  const url = new URL(request.url)
+  const statusParam = url.searchParams.get('status') ?? ''
+  const validStatuses = new Set(['pending', 'resolved', 'dismissed'])
+
+  let results: ReportRow[]
+  if (statusParam && validStatuses.has(statusParam)) {
+    const { results: rows } = await env.DB.prepare(
+      'SELECT * FROM reports WHERE status = ? ORDER BY created_at DESC'
+    ).bind(statusParam).all<ReportRow>()
+    results = rows
+  } else {
+    const { results: rows } = await env.DB.prepare(
+      'SELECT * FROM reports ORDER BY created_at DESC'
+    ).all<ReportRow>()
+    results = rows
+  }
+
+  return json(results, 200, origin, env)
+}
+
+// ── Admin: PATCH /admin/reports/:id ──────────────────────────────────────────
+
+async function handleAdminUpdateReport(request: Request, env: Env, origin: string, pathname: string): Promise<Response> {
+  const secret = request.headers.get('X-Admin-Secret')
+  if (!secret || secret !== env.ADMIN_SECRET) return jsonErr(401, 'Unauthorized', origin, env)
+
+  const reportId = pathname.slice('/admin/reports/'.length)
+  if (!reportId) return jsonErr(400, 'Report ID required', origin, env)
+
+  let body: { status?: unknown }
+  try {
+    body = await request.json() as { status?: unknown }
+  } catch {
+    return jsonErr(400, 'Invalid JSON body', origin, env)
+  }
+
+  if (body.status !== 'resolved' && body.status !== 'dismissed') {
+    return jsonErr(400, 'status must be resolved or dismissed', origin, env)
+  }
+
+  const resolvedAt = Date.now()
+  const result = await env.DB.prepare(
+    'UPDATE reports SET status = ?, resolved_at = ?, resolved_by = ? WHERE id = ?'
+  ).bind(body.status, resolvedAt, 'staff', reportId).run()
+
+  if (result.meta.changes === 0) return jsonErr(404, 'Report not found', origin, env)
+
+  return json({ ok: true }, 200, origin, env)
 }
 
 function corsHeaders(origin: string, env: Env): Headers {
