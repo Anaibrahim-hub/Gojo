@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, Mail, Bed, Bath, Maximize, Images } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Mail, Bed, Bath, Maximize, Images, Flag } from 'lucide-react';
 import { type Property } from '@/app/data/properties';
 import { useAuth } from '@/lib/auth-context';
 import { formatETB } from '@/app/components/ui/utils';
+import ReportModal from '@/app/components/ReportModal';
 
 interface PropertyModalProps {
   property: Property | null;
@@ -16,6 +17,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [mobilePhotoIndex, setMobilePhotoIndex] = useState(0);
   const [mobileTouchStartX, setMobileTouchStartX] = useState(0);
+  const [reportOpen, setReportOpen] = useState(false);
   const { user, photoURL } = useAuth();
   const onCloseRef = React.useRef(onClose);
   const pushedHistoryRef = React.useRef(false);
@@ -259,6 +261,18 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
                     </div>
                   </div>
                 )}
+
+                {user && (
+                  <div className="pt-2 border-t border-gray-100">
+                    <button
+                      onClick={() => setReportOpen(true)}
+                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      <Flag className="w-3.5 h-3.5" />
+                      Report listing
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -357,6 +371,15 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
             <ChevronRight className="w-7 h-7" />
           </button>
         </div>
+      )}
+
+      {property.firestoreId && (
+        <ReportModal
+          open={reportOpen}
+          onClose={() => setReportOpen(false)}
+          targetType="listing"
+          targetId={property.firestoreId}
+        />
       )}
     </>
   );
