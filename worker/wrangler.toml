@@ -8,6 +8,14 @@ binding = "RATE_LIMITER"
 id = "87c884a2501a434c8221a9816e7493af"
 preview_id = "55aac3737b544fd6bc7b756f5db5d1fe"
 
+[[kv_namespaces]]
+binding = "PUSH_TOKENS"
+id = "7c800302f52744fb97072c4f6fa59628"
+
+[[kv_namespaces]]
+binding = "SAVED_SEARCHES"
+id = "5f5c329fa8cc4e938713b591f16f4455"
+
 [[r2_buckets]]
 binding = "GOJO_LISTINGS"
 bucket_name = "gojo-listings"
@@ -18,6 +26,9 @@ bucket_name = "gojo-listings"
 binding = "DB"
 database_name = "gojo-listings-db"
 database_id = "991dc13e-0bdc-407d-8707-0ef22cecf96b"
+
+[triggers]
+crons = ["0 3 * * *"]  # 3 AM UTC daily — purge expired notifications
 
 [vars]
 FIREBASE_PROJECT_ID = "gojo-9e529"

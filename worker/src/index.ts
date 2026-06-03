@@ -218,6 +218,20 @@ export default {
       if (pathname.startsWith('/admin/reports/') && request.method === 'PATCH') {
         return await handleAdminUpdateReport(request, env, origin, pathname)
       }
+      if (pathname === '/legal' && request.method === 'GET') {
+        return await handleGetLegal(request, env, origin)
+      }
+      if (pathname === '/admin/legal') {
+        if (request.method === 'GET') return await handleAdminGetLegal(request, env, origin)
+        if (request.method === 'PUT') return await handleAdminPutLegal(request, env, origin)
+      }
+      if (pathname === '/app-version' && request.method === 'GET') {
+        return await handleGetAppVersion(request, env, origin)
+      }
+      if (pathname === '/admin/app-config') {
+        if (request.method === 'GET')   return await handleAdminGetAppConfig(request, env, origin)
+        if (request.method === 'PATCH') return await handleAdminPatchAppConfig(request, env, origin)
+      }
     } catch (err) {
       console.error(err)
       return jsonErr(500, 'Internal server error', origin, env)
@@ -1810,10 +1824,430 @@ async function handleAdminUpdateReport(request: Request, env: Env, origin: strin
   return json({ ok: true }, 200, origin, env)
 }
 
+// ── Legal content types ───────────────────────────────────────────────────────
+
+interface LegalSection { title: string; body: string }
+interface LegalDoc { effectiveDate: string; sections: LegalSection[] }
+
+// ── Legal content defaults ────────────────────────────────────────────────────
+
+const DEFAULT_GOJO_PRIVACY: LegalDoc = {
+  effectiveDate: 'June 1, 2026',
+  sections: [
+    {
+      title: '1. Information We Collect',
+      body: 'We collect the following information when you use Yevilla:\n\n• Account information: Your email address and display name when you create an account via Google Sign-In or email magic link.\n• Listing content: Property details you submit, including address, city, property type, pricing, photos, and description.\n• Usage data: Anonymous property view counts are recorded to surface popular listings. No personally identifiable usage data is collected.\n• Browser local storage: Your email address is stored in your browser\'s local storage solely to pre-fill the sign-in email field on return visits. This data never leaves your browser and is not sent to our servers.\n• Rate-limit data: Your IP address is temporarily stored in Cloudflare KV to enforce fair-use rate limits. This data expires automatically and is not linked to your account.',
+    },
+    {
+      title: '2. How We Use Your Information',
+      body: 'We use the information we collect exclusively to operate the platform:\n\n• Operate the platform: Display listings, enable search and filtering, and manage your account.\n• Authenticate you: Verify your identity via Google Sign-In or email magic link.\n• Process listings: Review, approve, and display property listings submitted by users.\n• Respond to inquiries: Reply to messages you send through the Contact page.\n• Prevent abuse: Enforce rate limits and detect fraudulent or harmful activity.\n\nWe do not use your data for advertising, sell your personal information, or share it with data brokers.',
+    },
+    {
+      title: '3. How We Share Your Information',
+      body: 'We share your information only in the following limited circumstances:\n\n• Published listings are public: When you publish a listing, its details (property type, price, location, photos, and your display name) are visible to all visitors of the Yevilla website.\n• Service providers: We use the following third-party services solely to operate the platform: Google Firebase (authentication and database), Google Sign-In (OAuth), Apple Sign-In (OAuth where applicable), Mapbox (map rendering and address geocoding), and Cloudflare (hosting, CDN, and rate limiting). These providers are contractually required to protect your data.\n• Legal disclosures: We may disclose your information if required by law, court order, or governmental authority, or if necessary to protect our rights or the safety of others.',
+    },
+    {
+      title: '4. Data Storage and Security',
+      body: 'Your account and listing data are stored on Google Firebase servers, which are protected by industry-standard security measures including encryption at rest and in transit (TLS).\n\nListing photos are stored in Cloudflare R2 object storage and served via Cloudflare\'s global CDN. Photos associated with published listings are publicly accessible by URL while the listing is active. When a listing is deleted, its photos are permanently removed from storage.\n\nAll data transmitted between your browser and our servers is encrypted using TLS.',
+    },
+    {
+      title: '5. Cookies and Local Storage',
+      body: 'Yevilla does not use tracking cookies or advertising cookies of any kind.\n\nWe use your browser\'s local storage solely to remember your email address for the sign-in form, making it more convenient for you to return. This data is stored only in your browser and is never sent to our servers as part of routine operation. You can clear it at any time by clearing your browser\'s local storage or site data.',
+    },
+    {
+      title: '6. Data Retention',
+      body: '• Listing data: Retained until you delete your listing or your account.\n• Saved favorites: Retained until you remove them from your favorites or delete your account.\n• Authentication records: Managed by Google Firebase Authentication and subject to Google\'s data retention policies.\n• Rate-limit KV entries: Automatically expire within a short window (typically 60–120 seconds) and are not retained beyond their purpose.',
+    },
+    {
+      title: '7. Your Rights',
+      body: 'You have the following rights regarding your personal information:\n\n• Access: You may request a copy of the personal information we hold about you.\n• Correction: You may update your display name and other account details at any time.\n• Deletion: You may delete your listings and associated photos at any time. To request deletion of your account and all associated data, please contact us via the Contact page on the website.\n• Withdraw consent: You may withdraw your consent to data processing at any time by deleting your account.\n\nTo exercise any of these rights, please use the Contact page on the Yevilla website.',
+    },
+    {
+      title: '8. Children\'s Privacy',
+      body: 'Yevilla is not directed to or intended for use by individuals under the age of 18. We do not knowingly collect personal information from minors. If you believe a minor has provided us with personal information, please contact us via the Contact page and we will take steps to delete it.',
+    },
+    {
+      title: '9. Changes to This Policy',
+      body: 'We may update this Privacy Policy from time to time to reflect changes to our practices or for other operational, legal, or regulatory reasons. We will indicate the effective date of the current version at the top of this policy. Your continued use of Yevilla after any changes constitutes your acceptance of the updated policy.',
+    },
+    {
+      title: '10. Contact',
+      body: 'If you have questions or concerns about this Privacy Policy or how we handle your data, please reach out to us via the Contact page on the Yevilla website.',
+    },
+  ],
+}
+
+const DEFAULT_GOJO_TERMS: LegalDoc = {
+  effectiveDate: 'June 1, 2026',
+  sections: [
+    {
+      title: '1. About Yevilla',
+      body: 'Yevilla is an online marketplace for Ethiopian real estate. It allows users to browse, search, and connect with property owners and verified agents offering properties for rent or sale across Ethiopia. Yevilla is a listing platform only — we are not a real estate agent, broker, buyer, seller, landlord, or tenant in any transaction, and we are not a party to any agreement between users.\n\nBy using Yevilla, you agree to these Terms of Service. If you do not agree, you must not use the platform.',
+    },
+    {
+      title: '2. Eligibility',
+      body: 'To use Yevilla, you must:\n\n• Be at least 18 years of age.\n• Have the legal capacity to enter into a binding agreement under Ethiopian law.\n• Provide accurate, truthful, and current information when registering and using the platform.\n\nBy using the platform, you represent and warrant that you meet these requirements.',
+    },
+    {
+      title: '3. User Accounts',
+      body: 'You may sign in using Google Sign-In or an email magic link. You are responsible for maintaining the confidentiality of your account and for all activity that occurs under it.\n\n• One account per person: You may maintain only one account. Creating multiple accounts to circumvent restrictions or bans is prohibited.\n• Security: You agree to notify us promptly if you become aware of any unauthorized access to or use of your account.\n• Accuracy: You agree to keep your account information accurate and up to date.',
+    },
+    {
+      title: '4. Listings and Content',
+      body: 'By submitting a listing, you represent and warrant that:\n\n• You are the property owner or the owner\'s authorized representative with the right to list the property.\n• All listing information — including price, location, photos, property details, and availability — is truthful, accurate, and not misleading.\n• Your listing content does not infringe any third party\'s intellectual property rights.\n• Your listing complies with all applicable Ethiopian laws and regulations, including property ownership, rental, and consumer protection laws.\n\nYou must not post listings that are fraudulent, deceptive, discriminatory, or intended to scam other users.',
+    },
+    {
+      title: '5. Prohibited Conduct',
+      body: 'You agree not to engage in any of the following:\n\n• Fraud or deception: Posting false, misleading, or fraudulent listings or impersonating another person or entity.\n• Scraping and automation: Using automated tools, bots, or scripts to access, scrape, or extract data from the platform without our written permission.\n• Harassment: Harassing, threatening, or abusing other users.\n• Circumvention: Attempting to bypass any content filters, rate limits, or security measures.\n• Unlawful use: Using the platform for any purpose that violates Ethiopian law or any applicable regulation.\n• Interference: Attempting to disrupt, overload, or compromise the platform\'s infrastructure or security.',
+    },
+    {
+      title: '6. Moderation',
+      body: 'We review all listings before they are published. We reserve the right to reject, remove, or unpublish any listing at our sole discretion, including listings that violate these Terms, that we determine are inaccurate or misleading, or that we otherwise consider inappropriate for the platform. We are not obligated to provide a reason for rejection or removal.',
+    },
+    {
+      title: '7. One Listing per Standard User',
+      body: 'Standard (non-agent) users may maintain one active listing at a time. This listing is associated with your account. If you submit a new listing, it will replace your existing one after review and approval. Verified agents may manage multiple listings simultaneously.',
+    },
+    {
+      title: '8. Verified Agents',
+      body: 'Users may apply to become a verified agent on Yevilla. Approval is at our sole discretion.\n\n• Application: Applicants must provide accurate information, including their full name, email, phone number, license number, years of experience, specialization, and service areas.\n• Responsibilities: Verified agents are responsible for the accuracy of all listings they manage and must comply with all applicable Ethiopian real estate licensing laws and professional conduct standards.\n• Revocation: We reserve the right to revoke agent status at any time for violations of these Terms, misrepresentation in the application, or conduct that we determine is harmful to users or the platform.',
+    },
+    {
+      title: '9. Intellectual Property',
+      body: 'The Yevilla name, logo, website design, and all platform software, text, and graphics created by us are our exclusive property and are protected by applicable copyright and trademark law. You may not use them without our prior written permission.\n\nBy submitting listing content (including photos, descriptions, and contact information), you grant us a non-exclusive, royalty-free, worldwide license to store, display, and distribute that content solely for the purpose of operating the platform. You retain all ownership rights in your content. You may remove your content at any time by deleting your listing.',
+    },
+    {
+      title: '10. Disclaimers',
+      body: 'We do not verify the accuracy of listings or the identity of users beyond basic authentication. The presence of a listing on Yevilla does not constitute our endorsement, recommendation, or guarantee of that listing or of the user who posted it.\n\nNothing on the platform constitutes legal, financial, or real estate advice. You are solely responsible for conducting your own due diligence before entering into any real estate transaction.\n\nThe platform is provided "as is" and "as available" without warranties of any kind, express or implied, including warranties of merchantability, fitness for a particular purpose, or non-infringement.',
+    },
+    {
+      title: '11. Limitation of Liability',
+      body: 'To the maximum extent permitted by applicable law, Yevilla and its operators, officers, and affiliates shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising out of or related to your use of or inability to use the platform, including loss of profits, data, or goodwill, even if we have been advised of the possibility of such damages.\n\nOur total liability to you for any claim arising out of or relating to these Terms or the platform shall not exceed ETB 1,000 or the amount you paid us (if any) in the twelve months preceding the claim, whichever is greater.',
+    },
+    {
+      title: '12. Indemnification',
+      body: 'You agree to indemnify and hold harmless Yevilla and its operators, officers, and affiliates from any claims, damages, liabilities, costs, and expenses (including reasonable attorneys\' fees) arising out of or related to: (a) your use of the platform; (b) your violation of these Terms; (c) your listing content; or (d) your violation of any third-party rights.',
+    },
+    {
+      title: '13. Account Termination',
+      body: 'You may request deletion of your account at any time by contacting us via the Contact page. Account deletion will permanently remove your listings and associated photos.\n\nWe reserve the right to suspend or terminate your access to the platform at any time, without notice, if we determine that you have violated these Terms or if your conduct may harm us, other users, or third parties. We are not liable for any loss resulting from such termination.',
+    },
+    {
+      title: '14. Governing Law',
+      body: 'These Terms are governed by and construed in accordance with the laws of the Federal Democratic Republic of Ethiopia. Any dispute arising out of or in connection with these Terms shall be subject to the exclusive jurisdiction of the courts of Addis Ababa, Ethiopia.',
+    },
+    {
+      title: '15. Changes to These Terms',
+      body: 'We may update these Terms at any time. We will indicate the effective date of the current version at the top of this document. Your continued use of Yevilla after any changes constitutes your acceptance of the revised Terms.',
+    },
+    {
+      title: '16. Contact',
+      body: 'If you have questions or concerns about these Terms, please contact us via the Contact page on the Yevilla website.',
+    },
+  ],
+}
+
+const DEFAULT_YEVILLA_PRIVACY: LegalDoc = {
+  effectiveDate: 'June 1, 2026',
+  sections: [
+    {
+      title: '1. Information We Collect',
+      body: 'We collect the following information when you use the Yevilla app:\n\n• Account information: Your email address, display name, and profile photo when you create or update your account.\n• Listing information: Property details including address, city, sub-city, woreda, kebele, landmark, property type, pricing, bedrooms, bathrooms, area, amenities, availability date, description, and photos.\n• Agent application: Full name, email, phone number, license number, years of experience, specialization, service areas, and biography when you apply to become a verified agent.\n• Contact messages: Name, email, subject, and message content submitted through our contact form.\n• Location data: GPS coordinates when you use the location feature to pin your property on the map. We only access your location when you explicitly trigger this action within the App.\n• Usage data: Property view counts and save counts are recorded to help surface popular listings.\n• Authentication tokens: Firebase authentication tokens stored securely on your device to maintain your session.\n\nWe also receive information from third-party sign-in providers: Google (account ID, email, display name), Apple (user identifier and optionally email and name depending on your privacy settings), and Mapbox (search queries and map interactions governed by Mapbox\'s privacy policy).',
+    },
+    {
+      title: '2. How We Use Your Information',
+      body: 'We use the information we collect to:\n\n• Provide the App\'s core features: Display listings, enable search and map functionality, save favorites, and manage your account.\n• Authenticate you: Verify your identity securely when you sign in via email link, Google, or Apple.\n• Process listing submissions: Review, approve, and display your property listings.\n• Respond to inquiries: Reply to messages sent through the contact form.\n• Improve the App: Analyze usage patterns such as view counts and search queries to improve the quality and relevance of listings.\n• Communicate with you: Send transactional emails such as sign-in magic links.\n\nWe do not use your data for advertising, sell your personal information, or share it with data brokers.',
+    },
+    {
+      title: '3. How We Share Your Information',
+      body: 'When you publish a listing, the following information is visible to all users of the App: property details (type, price, address, photos, amenities, description), your display name, your email address (for non-agent owners), and your phone number (for verified agents who choose to display it).\n\nWe share data with the following service providers solely to operate the App: Google Firebase (authentication, database, and file storage), Google Sign-In (OAuth authentication), Apple Sign-In (OAuth authentication), and Mapbox (map rendering and address geocoding). These providers are contractually required to protect your data and may not use it for their own purposes.\n\nWe may disclose your information if required to do so by law, court order, or governmental authority, or if we believe in good faith that disclosure is necessary to protect our rights, your safety, or the safety of others.',
+    },
+    {
+      title: '4. Data Storage and Security',
+      body: 'Your data is stored on Google Firebase servers, which are protected by industry-standard security measures including encryption in transit (TLS) and at rest.\n\nAuthentication tokens on your device are stored in Expo SecureStore, which uses your device\'s native secure enclave (Keychain on iOS, Keystore on Android).\n\nWe retain your data for as long as your account is active. When you deactivate your account, we delete your listings (including photos stored in cloud storage), favorites, and Firebase authentication record.',
+    },
+    {
+      title: '5. Your Rights and Choices',
+      body: 'You can update your display name and profile photo at any time from the Edit Profile screen in the App.\n\nYou may permanently deactivate your account from the Profile screen. This action deletes all your listings and their associated photos from our storage, removes all your saved favorites, deletes your Firebase authentication account, and is irreversible — data cannot be recovered after deactivation.\n\nLocation access is only requested when you explicitly use the "set location" feature while creating or editing a listing. You can deny this permission in your device settings at any time; the App will still function, but you will not be able to set GPS coordinates for listings.\n\nPhoto library access is only requested when you choose to add photos to a listing. You can manage this permission in your device settings.',
+    },
+    {
+      title: '6. Children\'s Privacy',
+      body: 'The App is not directed to children under the age of 13. We do not knowingly collect personal information from children under 13. If you believe a child has provided us with personal information, please contact us and we will delete it.',
+    },
+    {
+      title: '7. Changes to This Policy',
+      body: 'We may update this Privacy Policy from time to time. We will notify you of material changes by updating the effective date at the top of this policy. Continued use of the App after changes constitutes acceptance of the updated policy.',
+    },
+    {
+      title: '8. Contact Us',
+      body: 'If you have questions or concerns about this Privacy Policy or your data, please contact us:\n\nEmail: ana.ibrahim342@gmail.com\n\nApp: Use the "Contact Us" section in the App\'s Profile screen.',
+    },
+  ],
+}
+
+const DEFAULT_YEVILLA_TERMS: LegalDoc = {
+  effectiveDate: 'June 1, 2026',
+  sections: [
+    {
+      title: '1. Acceptance of Terms',
+      body: 'By downloading, installing, or using Yevilla, you confirm that you are at least 18 years old, have the legal capacity to enter into a binding agreement, and agree to these Terms and our Privacy Policy. If you do not agree, you must not use the App.',
+    },
+    {
+      title: '2. Description of Service',
+      body: 'Yevilla is a real estate marketplace platform that allows users to browse, search, and filter property listings (for rent and for sale) in Ethiopia, post and manage property listings, save favorite listings, view properties on an interactive map, contact property owners and verified agents, and apply to become a verified agent on the platform.\n\nYevilla is a listing platform only. We do not act as a real estate agent, broker, buyer, seller, landlord, or tenant in any transaction. We are not a party to any agreement between users.',
+    },
+    {
+      title: '3. User Accounts',
+      body: 'You may sign in using your email address (via a magic link), Google account, or Apple ID. You are responsible for maintaining the confidentiality of your account and for all activity that occurs under it.\n\nYou agree to provide accurate, current, and complete information when creating your account and to update it as necessary.\n\nEach user may maintain only one account. Creating multiple accounts to circumvent restrictions or bans is prohibited.',
+    },
+    {
+      title: '4. Listings and Content',
+      body: 'Only the property owner or their authorized representative may post a listing. Posting a property you do not own or are not authorized to represent is strictly prohibited.\n\nYou must ensure that all listing content is truthful, accurate, and not misleading — including price, location, property type, size, amenities, available date, and photos (which must be of the actual property).\n\nYou may not post listings that are fraudulent, deceptive, or intended to scam other users; advertise a property you do not have the right to rent or sell; contain illegal, offensive, or discriminatory content; include personal information of third parties without their consent; or violate any applicable Ethiopian law or regulation.\n\nAll listings are reviewed before publication. We reserve the right to reject, remove, or unpublish any listing at our sole discretion.',
+    },
+    {
+      title: '5. Prohibited Conduct',
+      body: 'You agree not to:\n\n• Use the App for any unlawful purpose\n• Harass, threaten, or harm other users\n• Scrape, copy, or systematically extract data from the App without our written permission\n• Reverse engineer, decompile, or attempt to extract the source code of the App\n• Use automated tools (bots, scrapers) to access, query, or interact with the App\n• Interfere with or disrupt the App\'s infrastructure or security\n• Impersonate another person or entity\n• Circumvent any content filtering or access controls',
+    },
+    {
+      title: '6. Moderation',
+      body: 'All listings are reviewed before publication. We reserve the right to reject, remove, or unpublish any listing at our sole discretion, including listings that violate these Terms or that we determine are otherwise inappropriate. We are not obligated to provide a reason for rejection or removal.',
+    },
+    {
+      title: '7. One Active Listing per Non-Agent User',
+      body: 'Standard (non-agent) users may maintain one active listing at a time. Verified agents may manage multiple listings.',
+    },
+    {
+      title: '8. Verified Agents',
+      body: 'Users may apply to become a verified agent by providing their full name, email, phone number, license number, years of experience, specialization, and service areas. Approval is at our sole discretion.\n\nVerified agents are responsible for the accuracy of all listings they manage and must comply with all applicable Ethiopian real estate licensing laws and professional conduct standards.\n\nWe reserve the right to revoke agent status for violations of these Terms, misrepresentation in the application, or conduct that we determine is harmful to users or to the platform.',
+    },
+    {
+      title: '9. Intellectual Property',
+      body: 'The Yevilla name, logo, design, and all software, text, and graphics created by us are our exclusive property and are protected by applicable copyright and trademark law. You may not use them without our written permission.\n\nBy posting a listing or any content on the App (including photos, descriptions, and contact information), you grant us a non-exclusive, royalty-free, worldwide license to store, display, and distribute that content solely for the purpose of operating and promoting the App. You retain all ownership rights in your content.',
+    },
+    {
+      title: '10. Disclaimers',
+      body: 'We do not verify the accuracy of listings or the identity of users beyond basic authentication. The presence of a listing on Yevilla does not constitute our endorsement, recommendation, or guarantee of that listing or the user who posted it.\n\nNothing in the App constitutes legal, financial, or real estate advice. You are solely responsible for conducting your own due diligence before entering into any real estate transaction.\n\nThe App is provided "as is" and "as available" without warranties of any kind, express or implied, including warranties of merchantability, fitness for a particular purpose, or non-infringement.',
+    },
+    {
+      title: '11. Limitation of Liability',
+      body: 'To the maximum extent permitted by applicable law, Yevilla and its officers, employees, and affiliates shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising out of or related to your use of or inability to use the App, including loss of profits, data, or goodwill, even if we have been advised of the possibility of such damages.\n\nOur total liability to you for any claim arising out of or relating to these Terms or the App shall not exceed the amount you paid us (if any) in the twelve (12) months preceding the claim.',
+    },
+    {
+      title: '12. Indemnification',
+      body: 'You agree to indemnify and hold harmless Yevilla and its officers, employees, and affiliates from any claims, damages, liabilities, costs, and expenses (including reasonable attorneys\' fees) arising out of or related to: (a) your use of the App; (b) your violation of these Terms; (c) your listing content; or (d) your violation of any third-party rights.',
+    },
+    {
+      title: '13. Account Termination',
+      body: 'You may deactivate your account at any time from the Profile screen. Deactivation permanently deletes your listings, photos, and favorites and is irreversible.\n\nWe reserve the right to suspend or terminate your account at any time, without notice, if we determine that you have violated these Terms or if your conduct may harm us, other users, or third parties. We are not liable for any loss resulting from such termination.',
+    },
+    {
+      title: '14. Governing Law',
+      body: 'These Terms are governed by and construed in accordance with the laws of the Federal Democratic Republic of Ethiopia. Any dispute arising out of or in connection with these Terms shall be subject to the exclusive jurisdiction of the courts of Addis Ababa, Ethiopia.',
+    },
+    {
+      title: '15. Changes to These Terms',
+      body: 'We may update these Terms at any time. We will notify you of material changes by updating the effective date above. If you continue to use the App after revised Terms become effective, you accept the revised Terms.',
+    },
+    {
+      title: '16. Contact Us',
+      body: 'If you have questions about these Terms, please contact us:\n\nEmail: ana.ibrahim342@gmail.com\n\nApp: Use the "Contact Us" section in the App\'s Profile screen.',
+    },
+  ],
+}
+
+// ── Legal content: helper ─────────────────────────────────────────────────────
+
+async function getLegalDoc(env: Env, platform: string, type: string): Promise<LegalDoc> {
+  const key = `legal:${platform}:${type}`
+  const stored = await env.RATE_LIMITER.get(key)
+  if (stored) {
+    try { return JSON.parse(stored) as LegalDoc } catch {}
+  }
+  if (platform === 'gojo' && type === 'privacy') return DEFAULT_GOJO_PRIVACY
+  if (platform === 'gojo' && type === 'terms') return DEFAULT_GOJO_TERMS
+  if (platform === 'yevilla' && type === 'privacy') return DEFAULT_YEVILLA_PRIVACY
+  if (platform === 'yevilla' && type === 'terms') return DEFAULT_YEVILLA_TERMS
+  return { effectiveDate: 'June 1, 2026', sections: [] }
+}
+
+// ── Legal content: GET /legal (public) ───────────────────────────────────────
+
+async function handleGetLegal(request: Request, env: Env, origin: string): Promise<Response> {
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
+  if (!await rateLimit(env, `pub:${ip}`, RATE_LIMITS.read_pub)) {
+    return jsonErr(429, 'Too many requests — please slow down', origin, env)
+  }
+
+  const url = new URL(request.url)
+  const platform = url.searchParams.get('platform') ?? ''
+  const type = url.searchParams.get('type') ?? ''
+
+  if (platform !== 'gojo' && platform !== 'yevilla') {
+    return jsonErr(400, 'platform must be gojo or yevilla', origin, env)
+  }
+  if (type !== 'privacy' && type !== 'terms') {
+    return jsonErr(400, 'type must be privacy or terms', origin, env)
+  }
+
+  const doc = await getLegalDoc(env, platform, type)
+  const h = corsHeaders(origin, env)
+  h.set('Content-Type', 'application/json')
+  h.set('Cache-Control', 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=300')
+  return new Response(JSON.stringify(doc), { status: 200, headers: h })
+}
+
+// ── Admin: GET /admin/legal ───────────────────────────────────────────────────
+
+async function handleAdminGetLegal(request: Request, env: Env, origin: string): Promise<Response> {
+  const secret = request.headers.get('X-Admin-Secret')
+  if (!secret || secret !== env.ADMIN_SECRET) return jsonErr(401, 'Unauthorized', origin, env)
+
+  const [gojoPrivacy, gojoTerms, yevillaPrivacy, yevillaTerms] = await Promise.all([
+    getLegalDoc(env, 'gojo', 'privacy'),
+    getLegalDoc(env, 'gojo', 'terms'),
+    getLegalDoc(env, 'yevilla', 'privacy'),
+    getLegalDoc(env, 'yevilla', 'terms'),
+  ])
+
+  return json({
+    gojo: { privacy: gojoPrivacy, terms: gojoTerms },
+    yevilla: { privacy: yevillaPrivacy, terms: yevillaTerms },
+  }, 200, origin, env)
+}
+
+// ── Admin: PUT /admin/legal ───────────────────────────────────────────────────
+
+async function handleAdminPutLegal(request: Request, env: Env, origin: string): Promise<Response> {
+  const secret = request.headers.get('X-Admin-Secret')
+  if (!secret || secret !== env.ADMIN_SECRET) return jsonErr(401, 'Unauthorized', origin, env)
+
+  let body: { platform?: unknown; type?: unknown; doc?: unknown }
+  try { body = await request.json() as { platform?: unknown; type?: unknown; doc?: unknown } }
+  catch { return jsonErr(400, 'Invalid JSON', origin, env) }
+
+  const platform = typeof body.platform === 'string' ? body.platform : ''
+  const type = typeof body.type === 'string' ? body.type : ''
+
+  if (platform !== 'gojo' && platform !== 'yevilla') {
+    return jsonErr(400, 'platform must be gojo or yevilla', origin, env)
+  }
+  if (type !== 'privacy' && type !== 'terms') {
+    return jsonErr(400, 'type must be privacy or terms', origin, env)
+  }
+
+  const doc = body.doc
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+    return jsonErr(400, 'doc must be an object', origin, env)
+  }
+  const d = doc as Record<string, unknown>
+
+  if (typeof d.effectiveDate !== 'string' || d.effectiveDate.length === 0 || d.effectiveDate.length > 50) {
+    return jsonErr(400, 'doc.effectiveDate must be a non-empty string (max 50 chars)', origin, env)
+  }
+  if (!Array.isArray(d.sections) || d.sections.length > 50) {
+    return jsonErr(400, 'doc.sections must be an array of at most 50 items', origin, env)
+  }
+  for (const section of d.sections as unknown[]) {
+    if (!section || typeof section !== 'object' || Array.isArray(section)) {
+      return jsonErr(400, 'Each section must be an object', origin, env)
+    }
+    const s = section as Record<string, unknown>
+    if (typeof s.title !== 'string' || s.title.length === 0 || s.title.length > 200) {
+      return jsonErr(400, 'Each section.title must be a non-empty string (max 200 chars)', origin, env)
+    }
+    if (typeof s.body !== 'string' || s.body.length === 0 || s.body.length > 10000) {
+      return jsonErr(400, 'Each section.body must be a non-empty string (max 10000 chars)', origin, env)
+    }
+  }
+
+  const legalDoc: LegalDoc = {
+    effectiveDate: d.effectiveDate as string,
+    sections: (d.sections as Array<Record<string, string>>).map(s => ({
+      title: s.title,
+      body: s.body,
+    })),
+  }
+
+  const key = `legal:${platform}:${type}`
+  await env.RATE_LIMITER.put(key, JSON.stringify(legalDoc))
+
+  return json({ ok: true, platform, type }, 200, origin, env)
+}
+
+// ── App config ────────────────────────────────────────────────────────────────
+
+async function handleGetAppVersion(request: Request, env: Env, origin: string): Promise<Response> {
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
+  if (!await rateLimit(env, `pub:${ip}`, RATE_LIMITS.read_pub)) {
+    return jsonErr(429, 'Too many requests', origin, env)
+  }
+  const row = await env.DB.prepare(
+    'SELECT min_ios_version, min_android_version, ios_store_url, android_store_url FROM app_config WHERE id = 1'
+  ).first<{ min_ios_version: string; min_android_version: string; ios_store_url: string; android_store_url: string }>()
+
+  return json({
+    minIosVersion:     row?.min_ios_version     ?? '0.0.0',
+    minAndroidVersion: row?.min_android_version ?? '0.0.0',
+    iosStoreUrl:       row?.ios_store_url       ?? '',
+    androidStoreUrl:   row?.android_store_url   ?? '',
+  }, 200, origin, env)
+}
+
+async function handleAdminGetAppConfig(request: Request, env: Env, origin: string): Promise<Response> {
+  const secret = request.headers.get('X-Admin-Secret')
+  if (!secret || secret !== env.ADMIN_SECRET) return jsonErr(401, 'Unauthorized', origin, env)
+
+  const row = await env.DB.prepare(
+    'SELECT min_ios_version, min_android_version, ios_store_url, android_store_url, updated_at FROM app_config WHERE id = 1'
+  ).first<{ min_ios_version: string; min_android_version: string; ios_store_url: string; android_store_url: string; updated_at: number }>()
+
+  return json({
+    minIosVersion:     row?.min_ios_version     ?? '0.0.0',
+    minAndroidVersion: row?.min_android_version ?? '0.0.0',
+    iosStoreUrl:       row?.ios_store_url       ?? '',
+    androidStoreUrl:   row?.android_store_url   ?? '',
+    updatedAt:         row?.updated_at          ?? 0,
+  }, 200, origin, env)
+}
+
+async function handleAdminPatchAppConfig(request: Request, env: Env, origin: string): Promise<Response> {
+  const secret = request.headers.get('X-Admin-Secret')
+  if (!secret || secret !== env.ADMIN_SECRET) return jsonErr(401, 'Unauthorized', origin, env)
+
+  let body: { minIosVersion?: unknown; minAndroidVersion?: unknown; iosStoreUrl?: unknown; androidStoreUrl?: unknown }
+  try { body = await request.json() as typeof body }
+  catch { return jsonErr(400, 'Invalid JSON', origin, env) }
+
+  const semverRe = /^\d+\.\d+\.\d+$/
+  if (body.minIosVersion !== undefined && (typeof body.minIosVersion !== 'string' || !semverRe.test(body.minIosVersion))) {
+    return jsonErr(400, 'minIosVersion must be semver (e.g. 1.2.0)', origin, env)
+  }
+  if (body.minAndroidVersion !== undefined && (typeof body.minAndroidVersion !== 'string' || !semverRe.test(body.minAndroidVersion))) {
+    return jsonErr(400, 'minAndroidVersion must be semver (e.g. 1.2.0)', origin, env)
+  }
+
+  const existing = await env.DB.prepare(
+    'SELECT min_ios_version, min_android_version, ios_store_url, android_store_url FROM app_config WHERE id = 1'
+  ).first<{ min_ios_version: string; min_android_version: string; ios_store_url: string; android_store_url: string }>()
+
+  const minIos     = typeof body.minIosVersion     === 'string' ? body.minIosVersion     : (existing?.min_ios_version ?? '0.0.0')
+  const minAndroid = typeof body.minAndroidVersion === 'string' ? body.minAndroidVersion : (existing?.min_android_version ?? '0.0.0')
+  const iosUrl     = typeof body.iosStoreUrl       === 'string' ? body.iosStoreUrl       : (existing?.ios_store_url ?? '')
+  const androidUrl = typeof body.androidStoreUrl   === 'string' ? body.androidStoreUrl   : (existing?.android_store_url ?? '')
+  const now = Date.now()
+
+  await env.DB.prepare(
+    'INSERT OR REPLACE INTO app_config (id, min_ios_version, min_android_version, ios_store_url, android_store_url, updated_at) VALUES (1, ?, ?, ?, ?, ?)'
+  ).bind(minIos, minAndroid, iosUrl, androidUrl, now).run()
+
+  return json({ minIosVersion: minIos, minAndroidVersion: minAndroid, iosStoreUrl: iosUrl, androidStoreUrl: androidUrl, updatedAt: now }, 200, origin, env)
+}
+
 function corsHeaders(origin: string, env: Env): Headers {
   const isLocalhost = /^http:\/\/localhost(:\d+)?$/.test(origin)
   const wwwVariant = env.ALLOWED_ORIGIN.replace(/^https:\/\//, 'https://www.')
-  const allowed = origin === env.ALLOWED_ORIGIN || origin === wwwVariant || isLocalhost
+  const adminVariant = env.ALLOWED_ORIGIN.replace(/^https:\/\//, 'https://admin.')
+  const allowed = origin === env.ALLOWED_ORIGIN || origin === wwwVariant || origin === adminVariant || isLocalhost
   const h = new Headers()
   h.set('Access-Control-Allow-Origin', allowed ? origin : env.ALLOWED_ORIGIN)
   h.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
