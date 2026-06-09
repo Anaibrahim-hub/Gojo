@@ -18,10 +18,12 @@ interface AuthContextType {
   user: User | null
   loading: boolean
   photoURL: string | null
+  displayName: string | null
   signInWithGoogle: () => Promise<void>
   sendEmailLink: (email: string) => Promise<void>
   signOut: () => Promise<void>
   updateUserPhoto: (url: string | null) => Promise<void>
+  updateUserProfile: (data: { displayName?: string }) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -30,6 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [photoURL, setPhotoURL] = useState<string | null>(null)
+  const [displayName, setDisplayName] = useState<string | null>(null)
 
   useEffect(() => {
     if (isSignInWithEmailLink(auth, window.location.href)) {
@@ -46,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u)
+      setDisplayName(u?.displayName ?? null)
       // Only use photos the user explicitly uploaded (R2). Ignore Google/OAuth provider
       // photos — they require referrer tricks and CSP allowances that are fragile.
       const url = u?.photoURL ?? null
@@ -83,8 +87,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPhotoURL(url)
   }
 
+  const updateUserProfile = async (data: { displayName?: string }) => {
+    if (!auth.currentUser) return
+    await updateProfile(auth.currentUser, data)
+    if ('displayName' in data) setDisplayName(data.displayName ?? null)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, photoURL, signInWithGoogle, sendEmailLink, signOut, updateUserPhoto }}>
+    <AuthContext.Provider value={{ user, loading, photoURL, displayName, signInWithGoogle, sendEmailLink, signOut, updateUserPhoto, updateUserProfile }}>
       {children}
     </AuthContext.Provider>
   )

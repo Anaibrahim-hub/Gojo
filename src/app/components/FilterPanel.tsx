@@ -265,7 +265,7 @@ export default function FilterPanel({
         {/* Logo */}
         <div
           onClick={onLogoClick}
-          className={`${!user ? 'block' : 'hidden'} lg:block text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent cursor-pointer flex-shrink-0 select-none`}
+          className={`${!user ? 'block' : 'hidden'} lg:block text-xl font-bold text-gray-900 cursor-pointer flex-shrink-0 select-none`}
         >
           Yevilla
         </div>
