@@ -6,8 +6,6 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   sendSignInLinkToEmail,
-  isSignInWithEmailLink,
-  signInWithEmailLink,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   updateProfile,
@@ -35,18 +33,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [displayName, setDisplayName] = useState<string | null>(null)
 
   useEffect(() => {
-    if (isSignInWithEmailLink(auth, window.location.href)) {
-      const email = window.localStorage.getItem('emailForSignIn')
-      if (email) {
-        signInWithEmailLink(auth, email, window.location.href)
-          .then(() => {
-            window.localStorage.removeItem('emailForSignIn')
-            window.history.replaceState({}, '', window.location.pathname)
-          })
-          .catch(console.error)
-      }
-    }
-
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u)
       setDisplayName(u?.displayName ?? null)
@@ -71,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const sendEmailLink = useCallback(async (email: string) => {
     await sendSignInLinkToEmail(auth, email, {
-      url: window.location.origin,
+      url: `${window.location.origin}/auth-action`,
       handleCodeInApp: true,
     })
     window.localStorage.setItem('emailForSignIn', email)

@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo, ReactNode } from 'react'
 import { useAuth } from './auth-context'
 import { auth } from './firebase'
 
@@ -110,7 +110,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('focus', onFocus)
   }, [user, loadFavorites])
 
-  const toggleFavorite = async (id: number) => {
+  const toggleFavorite = useCallback(async (id: number) => {
     const next = new Set(favoritesRef.current)
     if (next.has(id)) next.delete(id)
     else next.add(id)
@@ -126,12 +126,17 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
 
     const action = next.has(id) ? 'add' : 'remove'
     await patchFavorite(id, action)
-  }
+  }, [user])
 
-  const isFavorite = (id: number) => favorites.has(id)
+  const isFavorite = useCallback((id: number) => favorites.has(id), [favorites])
+
+  const value = useMemo(
+    () => ({ favorites, toggleFavorite, isFavorite }),
+    [favorites, toggleFavorite, isFavorite]
+  )
 
   return (
-    <FavoritesContext.Provider value={{ favorites, toggleFavorite, isFavorite }}>
+    <FavoritesContext.Provider value={value}>
       {children}
     </FavoritesContext.Provider>
   )

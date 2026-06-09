@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo, ReactNode } from 'react'
 import { apiListingToProperty, type Property } from '@/app/data/properties'
 
 const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
@@ -56,8 +56,13 @@ export function ListingsProvider({ children }: { children: ReactNode }) {
     fetchPage(pageRef.current + 1, true)
   }, [loadingMore, hasMore, fetchPage])
 
+  const value = useMemo(
+    () => ({ listings, loading, loadingMore, hasMore, loadMore }),
+    [listings, loading, loadingMore, hasMore, loadMore]
+  )
+
   return (
-    <ListingsContext.Provider value={{ listings, loading, loadingMore, hasMore, loadMore }}>
+    <ListingsContext.Provider value={value}>
       {children}
     </ListingsContext.Provider>
   )

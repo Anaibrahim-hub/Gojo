@@ -22,12 +22,16 @@ interface Props {
 }
 
 export default function SignInModal({ open, onClose }: Props) {
-  const { signInWithGoogle, sendEmailLink } = useAuth()
+  const { user, signInWithGoogle, sendEmailLink } = useAuth()
   const [view, setView] = useState<View>('options')
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (user && open) { onClose(); return }
+  }, [user, open, onClose])
 
   useEffect(() => {
     if (!open) {
