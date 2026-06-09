@@ -33,11 +33,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [displayName, setDisplayName] = useState<string | null>(null)
 
   useEffect(() => {
+    console.log('[auth] setting up onAuthStateChanged')
     const unsubscribe = onAuthStateChanged(auth, (u) => {
+      console.log('[auth] state changed → user:', u ? u.email : null, '| loading was:', loading)
       setUser(u)
       setDisplayName(u?.displayName ?? null)
-      // Only use photos the user explicitly uploaded (R2). Ignore Google/OAuth provider
-      // photos — they require referrer tricks and CSP allowances that are fragile.
       const url = u?.photoURL ?? null
       const isThirdParty = url && (
         url.includes('googleusercontent.com') ||
@@ -51,16 +51,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signInWithGoogle = useCallback(async () => {
+    console.log('[auth] signInWithGoogle start')
     const provider = new GoogleAuthProvider()
-    await signInWithPopup(auth, provider)
+    try {
+      const result = await signInWithPopup(auth, provider)
+      console.log('[auth] signInWithGoogle success → user:', result.user.email)
+    } catch (e) {
+      console.error('[auth] signInWithGoogle error:', e)
+      throw e
+    }
   }, [])
 
   const sendEmailLink = useCallback(async (email: string) => {
+    const actionUrl = `${window.location.origin}/auth-action`
+    console.log('[auth] sendEmailLink → email:', email, '| continueUrl:', actionUrl)
     await sendSignInLinkToEmail(auth, email, {
-      url: `${window.location.origin}/auth-action`,
+      url: actionUrl,
       handleCodeInApp: true,
     })
     window.localStorage.setItem('emailForSignIn', email)
+    console.log('[auth] sendEmailLink sent ok')
   }, [])
 
   const signOut = useCallback(async () => {

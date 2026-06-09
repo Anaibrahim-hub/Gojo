@@ -30,7 +30,8 @@ export default function SignInModal({ open, onClose }: Props) {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (user && open) { onClose(); return }
+    console.log('[modal] user changed →', user ? user.email : null, '| open:', open)
+    if (user && open) { console.log('[modal] user signed in → closing modal'); onClose(); return }
   }, [user, open, onClose])
 
   useEffect(() => {

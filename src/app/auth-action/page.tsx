@@ -14,22 +14,28 @@ function AuthAction() {
   useEffect(() => {
     const mode = searchParams.get('mode')
     const currentUrl = window.location.href
+    const isLink = isSignInWithEmailLink(auth, currentUrl)
+    console.log('[auth-action] mode:', mode, '| isSignInWithEmailLink:', isLink, '| url:', currentUrl)
 
-    if (mode === 'signIn' && isSignInWithEmailLink(auth, currentUrl)) {
+    if (mode === 'signIn' && isLink) {
       const email = localStorage.getItem('emailForSignIn')
+      console.log('[auth-action] stored email:', email)
       if (!email) {
         setError('Email not found. Please request a new sign-in link.')
         return
       }
       signInWithEmailLink(auth, email, currentUrl)
-        .then(() => {
+        .then((result) => {
+          console.log('[auth-action] signInWithEmailLink success → user:', result.user.email)
           localStorage.removeItem('emailForSignIn')
           router.replace('/')
         })
-        .catch((err: { message?: string }) => {
+        .catch((err: { code?: string; message?: string }) => {
+          console.error('[auth-action] signInWithEmailLink error:', err.code, err.message)
           setError(err.message || 'Sign-in failed. Please try again.')
         })
     } else {
+      console.log('[auth-action] not a sign-in link — redirecting home')
       router.replace('/')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
