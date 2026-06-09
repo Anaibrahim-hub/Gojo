@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useMemo, useCallback, ReactNode } from 'react'
 import {
   User,
   GoogleAuthProvider,
@@ -64,37 +64,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe
   }, [])
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = useCallback(async () => {
     const provider = new GoogleAuthProvider()
     await signInWithPopup(auth, provider)
-  }
+  }, [])
 
-  const sendEmailLink = async (email: string) => {
+  const sendEmailLink = useCallback(async (email: string) => {
     await sendSignInLinkToEmail(auth, email, {
       url: window.location.origin,
       handleCodeInApp: true,
     })
     window.localStorage.setItem('emailForSignIn', email)
-  }
+  }, [])
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await firebaseSignOut(auth)
-  }
+  }, [])
 
-  const updateUserPhoto = async (url: string | null) => {
+  const updateUserPhoto = useCallback(async (url: string | null) => {
     if (!auth.currentUser) return
     await updateProfile(auth.currentUser, { photoURL: url })
     setPhotoURL(url)
-  }
+  }, [])
 
-  const updateUserProfile = async (data: { displayName?: string }) => {
+  const updateUserProfile = useCallback(async (data: { displayName?: string }) => {
     if (!auth.currentUser) return
     await updateProfile(auth.currentUser, data)
     if ('displayName' in data) setDisplayName(data.displayName ?? null)
-  }
+  }, [])
+
+  const value = useMemo(
+    () => ({ user, loading, photoURL, displayName, signInWithGoogle, sendEmailLink, signOut, updateUserPhoto, updateUserProfile }),
+    [user, loading, photoURL, displayName, signInWithGoogle, sendEmailLink, signOut, updateUserPhoto, updateUserProfile]
+  )
 
   return (
-    <AuthContext.Provider value={{ user, loading, photoURL, displayName, signInWithGoogle, sendEmailLink, signOut, updateUserPhoto, updateUserProfile }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )
