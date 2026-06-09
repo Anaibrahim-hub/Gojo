@@ -3,42 +3,42 @@
 :root {
   --font-size: 16px;
   --background: #ffffff;
-  --foreground: oklch(0.145 0 0);
+  --foreground: #0a0a0f;
   --card: #ffffff;
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95 0.0058 264.53);
-  --secondary-foreground: #030213;
-  --muted: #ececf0;
-  --muted-foreground: #717182;
-  --accent: #e9ebef;
-  --accent-foreground: #030213;
+  --card-foreground: #0a0a0f;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0f;
+  --primary: #0a0a0f;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f6;
+  --secondary-foreground: #0a0a0f;
+  --muted: #f0f0f3;
+  --muted-foreground: #6b6b78;
+  --accent: #f0f0f3;
+  --accent-foreground: #0a0a0f;
   --destructive: #d4183d;
   --destructive-foreground: #ffffff;
-  --border: rgba(0, 0, 0, 0.1);
+  --border: rgba(0, 0, 0, 0.08);
   --input: transparent;
-  --input-background: #f3f3f5;
-  --switch-background: #cbced4;
+  --input-background: #f4f4f6;
+  --switch-background: #c4c4cc;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: oklch(0.708 0 0);
+  --ring: #2563eb;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #030213;
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a0a0f;
+  --sidebar-primary: #0a0a0f;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f4f4f6;
+  --sidebar-accent-foreground: #0a0a0f;
+  --sidebar-border: rgba(0, 0, 0, 0.08);
+  --sidebar-ring: #2563eb;
 }
 
 .dark {
@@ -60,7 +60,7 @@
   --destructive-foreground: oklch(0.637 0.237 25.331);
   --border: oklch(0.269 0 0);
   --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
+  --ring: #2563eb;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
   --chart-1: oklch(0.488 0.243 264.376);
@@ -75,17 +75,19 @@
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  --sidebar-ring: #2563eb;
 }
 
 @theme inline {
   /* ── Card sizing tokens — change these to resize all cards at once ── */
-  --spacing-card-img-sm: 13rem;       /* 208px — grid card image, mobile   */
-  --spacing-card-img-lg: 16rem;       /* 256px — grid card image, desktop  */
-  --spacing-carousel-w-sm: 15rem;     /* 240px — carousel card width, mobile  */
-  --spacing-carousel-w-lg: 17.5rem;   /* 280px — carousel card width, desktop */
-  --spacing-carousel-img-sm: 10rem;   /* 160px — carousel image, mobile    */
-  --spacing-carousel-img-lg: 11.5rem; /* 184px — carousel image, desktop   */
+  --spacing-card-img-sm: 13rem;        /* 208px — grid card image, mobile   */
+  --spacing-card-img-lg: 16rem;        /* 256px — grid card image, desktop  */
+  --spacing-carousel-w-sm: 15rem;      /* 240px — carousel card width, mobile  */
+  --spacing-carousel-w-lg: 18rem;      /* 288px — carousel card width, desktop */
+  --spacing-carousel-img-sm: 10rem;    /* 160px — carousel image, mobile    */
+  --spacing-carousel-img-lg: 12rem;    /* 192px — carousel image, desktop   */
+
+  --font-sans: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -134,12 +136,10 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-
-  /**
-  * Default typography styles for HTML elements (h1-h4, p, label, button, input).
-  * These are in @layer base, so Tailwind utility classes (like text-sm, text-lg) automatically override them.
-  */
 
   html {
     font-size: var(--font-size);
@@ -147,20 +147,22 @@
 
   h1 {
     font-size: var(--text-2xl);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
   }
 
   h2 {
     font-size: var(--text-xl);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
   }
 
   h3 {
     font-size: var(--text-lg);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+    font-weight: 600;
+    line-height: 1.4;
   }
 
   h4 {
@@ -179,13 +181,20 @@
     font-size: var(--text-base);
     font-weight: var(--font-weight-medium);
     line-height: 1.5;
+    font-family: var(--font-sans);
   }
 
-  input {
+  input, textarea, select {
     font-size: var(--text-base);
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
+    font-family: var(--font-sans);
   }
+}
+
+@keyframes progress-fill {
+  from { width: 0%; }
+  to   { width: 100%; }
 }
 
 @layer utilities {
@@ -201,8 +210,8 @@
 
 .mapbox-property-popup .mapboxgl-popup-content {
   padding: 0;
-  border-radius: 0.75rem;
+  border-radius: 0.875rem;
   overflow: hidden;
-  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-  border: 1px solid rgb(243 244 246);
+  box-shadow: 0 20px 40px -8px rgb(0 0 0 / 0.15), 0 8px 16px -4px rgb(0 0 0 / 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }

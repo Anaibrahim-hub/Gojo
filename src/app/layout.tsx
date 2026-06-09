@@ -1,8 +1,18 @@
 import type { Metadata } from 'next'
-import '../styles/index.css'
+import { Inter } from 'next/font/google'
 import { AuthProvider } from '@/lib/auth-context'
 import { FavoritesProvider } from '@/lib/favorites-context'
 import { ListingsProvider } from '@/lib/listings-context'
+import { MobileMapProvider } from '@/lib/mobile-map-context'
+import MobileBottomNav from '@/app/components/MobileBottomNav'
+import '../styles/index.css'
+
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-inter',
+  weight: ['300', '400', '500', '600', '700', '800', '900'],
+})
 
 export const metadata: Metadata = {
   title: 'Yevilla — Find Homes for Sale & Rent in Ethiopia',
@@ -61,8 +71,12 @@ const websiteSchema = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={inter.variable}>
       <head>
+        <link rel="preconnect" href="https://gojo-upload.ana-ibrahim433.workers.dev" />
+        <link rel="dns-prefetch" href="https://gojo-upload.ana-ibrahim433.workers.dev" />
+        <link rel="dns-prefetch" href="https://api.mapbox.com" />
+        <link rel="dns-prefetch" href="https://events.mapbox.com" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
@@ -73,7 +87,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body style={{ height: '100%', margin: 0 }}>
-        <AuthProvider><ListingsProvider><FavoritesProvider>{children}</FavoritesProvider></ListingsProvider></AuthProvider>
+        <AuthProvider><ListingsProvider><FavoritesProvider><MobileMapProvider>
+          {children}
+          <MobileBottomNav />
+        </MobileMapProvider></FavoritesProvider></ListingsProvider></AuthProvider>
       </body>
     </html>
   )

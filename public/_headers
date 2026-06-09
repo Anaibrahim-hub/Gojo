@@ -1,3 +1,9 @@
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/hero-bg.jpg
+  Cache-Control: public, max-age=604800
+
 /*
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
   X-Frame-Options: DENY
@@ -5,4 +11,7 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(self), browsing-topics=()
   X-DNS-Prefetch-Control: on
+  Cross-Origin-Opener-Policy: unsafe-none
+  Cross-Origin-Resource-Policy: same-site
+  X-Permitted-Cross-Domain-Policies: none
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://images.unsplash.com https://*.mapbox.com https://*.r2.dev https://*.googleusercontent.com; connect-src 'self' https://api.mapbox.com https://events.mapbox.com https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com https://*.workers.dev https://accounts.google.com https://cloudflareinsights.com; font-src 'self' data:; worker-src blob:; child-src blob:; frame-src https://gojo-9e529.firebaseapp.com https://accounts.google.com https://yevilla.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;

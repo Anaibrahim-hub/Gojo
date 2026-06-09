@@ -1,5 +1,6 @@
 'use client'
 
+import 'mapbox-gl/dist/mapbox-gl.css'
 import { useState, useEffect, useRef } from 'react'
 import Map, { Marker, Popup, NavigationControl, FullscreenControl } from 'react-map-gl/mapbox'
 import type { MapRef } from 'react-map-gl/mapbox'

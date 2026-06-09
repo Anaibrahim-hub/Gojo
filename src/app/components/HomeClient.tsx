@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import HomePage from './HomePage'
 import PropertyModal from './PropertyModal'
@@ -10,6 +10,22 @@ export default function HomeClient() {
   const router = useRouter()
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [listingMode, setListingMode] = useState<'buy' | 'rent'>('buy')
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    if (window.innerWidth < 1024) {
+      router.replace('/listings')
+      return
+    }
+    setReady(true)
+    function onResize() {
+      if (window.innerWidth < 1024) router.replace('/listings')
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [router])
+
+  if (!ready) return <div style={{ height: '100dvh', background: '#fff' }} />
 
   return (
     <>
