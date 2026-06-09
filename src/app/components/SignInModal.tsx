@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Mail, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/lib/auth-context'
@@ -23,6 +23,8 @@ interface Props {
 
 export default function SignInModal({ open, onClose }: Props) {
   const { user, signInWithGoogle, sendEmailLink } = useAuth()
+  const onCloseRef = useRef(onClose)
+  useEffect(() => { onCloseRef.current = onClose }, [onClose])
   const [view, setView] = useState<View>('options')
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
@@ -30,9 +32,12 @@ export default function SignInModal({ open, onClose }: Props) {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    console.log('[modal] user changed →', user ? user.email : null, '| open:', open)
-    if (user && open) { console.log('[modal] user signed in → closing modal'); onClose(); return }
-  }, [user, open, onClose])
+    console.log('[modal] user/open changed → user:', user ? user.email : null, '| open:', open)
+    if (user && open) {
+      console.log('[modal] user signed in → closing modal')
+      onCloseRef.current()
+    }
+  }, [user, open]) // onClose intentionally excluded — kept stable via ref
 
   useEffect(() => {
     if (!open) {
