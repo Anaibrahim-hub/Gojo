@@ -9,6 +9,7 @@ import {
   ChevronRight, LogOut, ChevronDown,
 } from 'lucide-react';
 import { filterLocalPlaces } from '@/app/data/places';
+import LanguagePicker from './LanguagePicker';
 
 interface FilterPanelProps {
   filters: {
@@ -435,6 +436,13 @@ export default function FilterPanel({
         </button>
 
         {/* Desktop divider */}
+        <div className="hidden lg:block w-px h-6 bg-gray-200 flex-shrink-0" />
+
+        {/* Language picker (desktop) */}
+        <div className="hidden lg:flex items-center">
+          <LanguagePicker />
+        </div>
+
         <div className="hidden lg:block w-px h-6 bg-gray-200 flex-shrink-0" />
 
         {/* User avatar / Sign In (desktop) */}

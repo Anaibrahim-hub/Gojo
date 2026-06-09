@@ -5,21 +5,30 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Search, Heart, User, Key } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { useMobileMap } from '@/lib/mobile-map-context'
+import { useScreenT } from '@/lib/language-context'
 import SignInModal from './SignInModal'
 
-const tabs = [
-  { icon: Search, label: 'Search',   href: '/listings',    requiresAuth: false },
-  { icon: Heart,  label: 'Saved',    href: '/favorites',   requiresAuth: true  },
-  { icon: Key,    label: 'My Home',  href: '/list-my-home', requiresAuth: true  },
-  { icon: User,   label: 'Profile',  href: '/settings',    requiresAuth: true  },
-]
+const NAV_DEFAULTS = {
+  search: 'Search',
+  saved: 'Saved',
+  myHome: 'My Home',
+  profile: 'Profile',
+} as const
 
 export default function MobileBottomNav() {
   const pathname = usePathname()
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const { open: mapOpen } = useMobileMap()
   const [showSignIn, setShowSignIn] = useState(false)
+  const s = useScreenT(NAV_DEFAULTS)
+
+  const tabs = [
+    { icon: Search, label: s.search,  href: '/listings',    requiresAuth: false },
+    { icon: Heart,  label: s.saved,   href: '/favorites',   requiresAuth: true  },
+    { icon: Key,    label: s.myHome,  href: '/list-my-home', requiresAuth: true  },
+    { icon: User,   label: s.profile, href: '/settings',    requiresAuth: true  },
+  ]
 
   if (mapOpen) return null
 
@@ -38,6 +47,7 @@ export default function MobileBottomNav() {
               <button
                 key={href}
                 onClick={() => {
+                  if (authLoading) return
                   if (requiresAuth && !user) {
                     setShowSignIn(true)
                     return

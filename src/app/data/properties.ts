@@ -75,6 +75,7 @@ export interface Property {
   description?: string
   amenities?: string[]
   createdAt?: number
+  agentPhone?: string
 }
 
 // Stable numeric ID from a Firebase UID (offset avoids colliding with mock IDs 1–9)
@@ -118,6 +119,7 @@ export function apiListingToProperty(d: Record<string, unknown>): Property {
     description: (d.description as string) ?? undefined,
     amenities: (d.amenities as string[]) ?? [],
     createdAt: (d.createdAt as number) ?? undefined,
+    agentPhone: (d.agentPhone as string) ?? undefined,
   }
 }
 

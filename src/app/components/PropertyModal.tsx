@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, Mail, Bed, Bath, Maximize, Images, Flag } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useLanguage, useScreenT } from '@/lib/language-context';
+import { X, ChevronLeft, ChevronRight, Bed, Bath, Maximize, Images, Flag, Send, MessageCircle } from 'lucide-react';
 import { type Property } from '@/app/data/properties';
 import { useAuth } from '@/lib/auth-context';
 import { formatETB } from '@/app/components/ui/utils';
@@ -13,15 +14,79 @@ interface PropertyModalProps {
 
 const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? '';
 
+const MODAL_DEFAULTS = {
+  propertyDetails: 'Property Details',
+  aboutHome: 'About this home',
+  amenities: 'Amenities',
+  type: 'Type',
+  city: 'City',
+  subCity: 'Sub-City',
+  woreda: 'Woreda',
+  kebele: 'Kebele',
+  landmark: 'Landmark',
+  availableFrom: 'Available From',
+  beds: 'Beds',
+  baths: 'Baths',
+  furnished: 'Furnished',
+  translate: 'Translate',
+  showOriginal: 'Show original',
+  translating: 'Translating…',
+  reportListing: 'Report listing',
+  telegram: 'Telegram',
+  whatsapp: 'WhatsApp',
+} as const
+
+function buildContactMessage(property: Property, displayPrice: string): string {
+  const parts = [property.propertyType, property.address || property.city].filter(Boolean)
+  const propertyLabel = parts.join(' in ')
+  return `Hi, I'm interested in the ${propertyLabel}, listed at ${displayPrice}. Could you share more details?`
+}
+
+function phoneForWhatsApp(raw: string): string {
+  return raw.replace(/[\s+\-()]/g, '')
+}
+
+function phoneForTelegram(raw: string): string {
+  const cleaned = raw.replace(/[\s\-()]/g, '')
+  return cleaned.startsWith('+') ? cleaned : `+${cleaned}`
+}
+
 export default function PropertyModal({ property, onClose, listingMode }: PropertyModalProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [mobilePhotoIndex, setMobilePhotoIndex] = useState(0);
   const [mobileTouchStartX, setMobileTouchStartX] = useState(0);
   const [reportOpen, setReportOpen] = useState(false);
+  const [fallbackPhone, setFallbackPhone] = useState<string | null>(null);
+  const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
   const { user, photoURL } = useAuth();
+  const { language, translate } = useLanguage();
+  const s = useScreenT(MODAL_DEFAULTS);
   const onCloseRef = React.useRef(onClose);
   const pushedHistoryRef = React.useRef(false);
   useEffect(() => { onCloseRef.current = onClose; });
+
+  // Reset translation when property or language changes
+  useEffect(() => { setTranslatedDesc(null) }, [property?.firestoreId, language]);
+
+  const handleTranslateDesc = useCallback(async () => {
+    if (!property?.description) return;
+    setTranslating(true);
+    try {
+      const result = await translate(property.description);
+      setTranslatedDesc(result);
+    } finally {
+      setTranslating(false);
+    }
+  }, [property?.description, translate]);
+
+  useEffect(() => {
+    if (!WORKER_URL) return;
+    fetch(`${WORKER_URL}/contact`)
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { phone?: string } | null) => { if (d?.phone) setFallbackPhone(d.phone) })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!property?.firestoreId || !WORKER_URL) return;
@@ -64,7 +129,25 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
   const hasRentPrice = (property.rent ?? 0) > 0;
   const showRent = (!wantBuy || !hasSalePrice) && hasRentPrice;
   const displayPrice = showRent ? property.rent : property.price;
+  const displayPriceLabel = formatETB(displayPrice) + (showRent ? '/mo' : '');
   const hasOwner = !property.agentId && (property.ownerDisplayName || property.ownerEmail);
+
+  const rawPhone = property.agentPhone || fallbackPhone;
+  const hasPhone = !!rawPhone;
+
+  const openWhatsApp = useCallback(() => {
+    if (!rawPhone) return;
+    const phone = phoneForWhatsApp(rawPhone);
+    const msg = buildContactMessage(property, displayPriceLabel);
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+  }, [rawPhone, property, displayPriceLabel]);
+
+  const openTelegram = useCallback(() => {
+    if (!rawPhone) return;
+    const e164 = phoneForTelegram(rawPhone);
+    const msg = buildContactMessage(property, displayPriceLabel);
+    window.open(`https://t.me/${e164}?text=${encodeURIComponent(msg)}`, '_blank');
+  }, [rawPhone, property, displayPriceLabel]);
 
   const nextLightbox = () => lightboxIndex !== null && setLightboxIndex((lightboxIndex + 1) % images.length);
   const prevLightbox = () => lightboxIndex !== null && setLightboxIndex((lightboxIndex - 1 + images.length) % images.length);
@@ -107,7 +190,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
 
           {/* ── Scrollable content ── */}
           <div className="flex-1 overflow-y-auto">
-            {/* ── Desktop photo grid — inside scroll so it moves with content ── */}
+            {/* ── Desktop photo grid ── */}
             <div className="hidden lg:block h-[400px] xl:h-[460px] overflow-hidden">
               {images.length === 1 ? (
                 <div className="relative h-full cursor-pointer overflow-hidden group" onClick={() => setLightboxIndex(0)}>
@@ -140,7 +223,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
               )}
             </div>
 
-            {/* ── Mobile photo carousel — inside scroll so it moves with content ── */}
+            {/* ── Mobile photo carousel ── */}
             <div
               className="lg:hidden relative h-80 cursor-pointer"
               onClick={() => setLightboxIndex(mobilePhotoIndex)}
@@ -153,7 +236,6 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
                 className="w-full h-full object-cover"
               />
               <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/45 to-transparent pointer-events-none" />
-              {/* Expand hint */}
               <div className="absolute top-3 right-3 bg-black/35 backdrop-blur-sm p-1.5 rounded-full pointer-events-none">
                 <Maximize className="w-4 h-4 text-white" />
               </div>
@@ -178,115 +260,135 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
               )}
             </div>
 
-            <div>
-              <div className="flex-1 px-5 lg:px-8 py-5 lg:py-6">
+            <div className="flex-1 px-5 lg:px-8 py-5 lg:py-6">
 
-                {/* Price + stats */}
-                <div className="mb-5 lg:mb-6">
-                  <p className="text-3xl lg:text-4xl font-bold text-gray-900 leading-tight mb-2">
-                    {formatETB(displayPrice)}
-                    {showRent && <span className="text-xl font-normal text-gray-500 ml-1">/mo</span>}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-gray-600">
-                    <span className="flex items-center gap-1.5">
-                      <Bed className="w-4 h-4 text-gray-400" />
-                      <strong className="text-gray-900">{property.beds}</strong> Beds
-                    </span>
-                    <span className="text-gray-200">|</span>
-                    <span className="flex items-center gap-1.5">
-                      <Bath className="w-4 h-4 text-gray-400" />
-                      <strong className="text-gray-900">{property.baths}</strong> Baths
-                    </span>
-                    {property.sqft > 0 && (
-                      <>
-                        <span className="text-gray-200">|</span>
-                        <span className="flex items-center gap-1.5">
-                          <Maximize className="w-4 h-4 text-gray-400" />
-                          <strong className="text-gray-900">{property.sqft.toLocaleString()}</strong> m²
-                        </span>
-                      </>
-                    )}
-                    {property.furnished && (
-                      <span className="ml-1 px-2.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-semibold">Furnished</span>
-                    )}
-                  </div>
-                  <p className="text-gray-500 text-sm mt-2">
-                    {[property.address, property.subCity, property.city].filter(Boolean).join(', ')}
-                  </p>
+              {/* Price + stats */}
+              <div className="mb-5 lg:mb-6">
+                <p className="text-3xl lg:text-4xl font-bold text-gray-900 leading-tight mb-2">
+                  {formatETB(displayPrice)}
+                  {showRent && <span className="text-xl font-normal text-gray-500 ml-1">/mo</span>}
+                </p>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-gray-600">
+                  <span className="flex items-center gap-1.5">
+                    <Bed className="w-4 h-4 text-gray-400" />
+                    <strong className="text-gray-900">{property.beds}</strong> Beds
+                  </span>
+                  <span className="text-gray-200">|</span>
+                  <span className="flex items-center gap-1.5">
+                    <Bath className="w-4 h-4 text-gray-400" />
+                    <strong className="text-gray-900">{property.baths}</strong> Baths
+                  </span>
+                  {property.sqft > 0 && (
+                    <>
+                      <span className="text-gray-200">|</span>
+                      <span className="flex items-center gap-1.5">
+                        <Maximize className="w-4 h-4 text-gray-400" />
+                        <strong className="text-gray-900">{property.sqft.toLocaleString()}</strong> m²
+                      </span>
+                    </>
+                  )}
+                  {property.furnished && (
+                    <span className="ml-1 px-2.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-semibold">{s.furnished}</span>
+                  )}
                 </div>
-
-                <div className="border-t border-gray-100 mb-5" />
-
-                {/* Property details */}
-                {(property.propertyType || property.availableFrom || property.subCity || property.woreda || property.kebele || property.landmark) && (
-                  <div className="mb-5 lg:mb-6">
-                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Property Details</h3>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-0 text-sm">
-                      {[
-                        ['Type', property.propertyType],
-                        ['City', property.city],
-                        ['Sub-City', property.subCity],
-                        ['Woreda', property.woreda],
-                        ['Kebele', property.kebele],
-                        ['Landmark', property.landmark],
-                        ['Available From', property.availableFrom
-                          ? new Date(property.availableFrom).toLocaleDateString('en-ET', { year: 'numeric', month: 'long', day: 'numeric' })
-                          : undefined],
-                      ].filter(([, v]) => !!v).map(([label, value]) => (
-                        <div key={label as string} className="flex justify-between py-2.5 border-b border-gray-50">
-                          <span className="text-gray-400">{label}</span>
-                          <span className="font-medium text-gray-800 text-right ml-4">{value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Description */}
-                {property.description && (
-                  <div className="mb-5 lg:mb-6">
-                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">About this home</h3>
-                    <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">{property.description}</p>
-                  </div>
-                )}
-
-                {/* Amenities */}
-                {property.amenities && property.amenities.length > 0 && (
-                  <div className="mb-5 lg:mb-6">
-                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Amenities</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {property.amenities.map(a => (
-                        <span key={a} className="px-3 py-1.5 bg-gray-50 border border-gray-200 text-gray-700 rounded-full text-xs font-medium">{a}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {user && (
-                  <div className="pt-2 border-t border-gray-100">
-                    <button
-                      onClick={() => setReportOpen(true)}
-                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
-                    >
-                      <Flag className="w-3.5 h-3.5" />
-                      Report listing
-                    </button>
-                  </div>
-                )}
+                <p className="text-gray-500 text-sm mt-2">
+                  {[property.address, property.subCity, property.city].filter(Boolean).join(', ')}
+                </p>
               </div>
+
+              <div className="border-t border-gray-100 mb-5" />
+
+              {/* Property details */}
+              {(property.propertyType || property.availableFrom || property.subCity || property.woreda || property.kebele || property.landmark) && (
+                <div className="mb-5 lg:mb-6">
+                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">{s.propertyDetails}</h3>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-0 text-sm">
+                    {[
+                      [s.type, property.propertyType],
+                      [s.city, property.city],
+                      [s.subCity, property.subCity],
+                      [s.woreda, property.woreda],
+                      [s.kebele, property.kebele],
+                      [s.landmark, property.landmark],
+                      [s.availableFrom, property.availableFrom
+                        ? new Date(property.availableFrom).toLocaleDateString('en-ET', { year: 'numeric', month: 'long', day: 'numeric' })
+                        : undefined],
+                    ].filter(([, v]) => !!v).map(([label, value]) => (
+                      <div key={label as string} className="flex justify-between py-2.5 border-b border-gray-50">
+                        <span className="text-gray-400">{label}</span>
+                        <span className="font-medium text-gray-800 text-right ml-4">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Description */}
+              {property.description && (
+                <div className="mb-5 lg:mb-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{s.aboutHome}</h3>
+                    {language !== 'en' && (
+                      <button
+                        onClick={translatedDesc ? () => setTranslatedDesc(null) : handleTranslateDesc}
+                        disabled={translating}
+                        className="text-xs text-blue-600 font-semibold disabled:opacity-50"
+                      >
+                        {translating ? s.translating : translatedDesc ? s.showOriginal : s.translate}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">{translatedDesc ?? property.description}</p>
+                </div>
+              )}
+
+              {/* Amenities */}
+              {property.amenities && property.amenities.length > 0 && (
+                <div className="mb-5 lg:mb-6">
+                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">{s.amenities}</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {property.amenities.map(a => (
+                      <span key={a} className="px-3 py-1.5 bg-gray-50 border border-gray-200 text-gray-700 rounded-full text-xs font-medium">{a}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {user && (
+                <div className="pt-2 border-t border-gray-100">
+                  <button
+                    onClick={() => setReportOpen(true)}
+                    className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
+                  >
+                    <Flag className="w-3.5 h-3.5" />
+                    {s.reportListing}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
           {/* ── Mobile sticky contact bar ── */}
-          {hasOwner && property.ownerEmail && (
-            <div className="lg:hidden flex-shrink-0 px-4 py-3.5 border-t border-gray-100 bg-white">
-              <a
-                href={`mailto:${property.ownerEmail}`}
-                className="flex items-center justify-center gap-2 w-full bg-gray-900 hover:bg-gray-800 active:bg-black text-white py-4 rounded-2xl text-sm font-semibold transition-colors"
-              >
-                <Mail className="w-4 h-4" />
-                {property.isAgent ? 'Contact Agent' : 'Contact Owner'}
-              </a>
+          {hasPhone && (
+            <div className="lg:hidden flex-shrink-0 px-4 py-3 border-t border-gray-100 bg-white" style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}>
+              <div className="flex gap-3">
+                <button
+                  onClick={openTelegram}
+                  className="flex flex-1 items-center justify-center gap-2 py-4 rounded-2xl font-bold text-white text-base active:opacity-90 transition-opacity"
+                  style={{ backgroundColor: '#2AABEE' }}
+                >
+                  <Send className="w-[17px] h-[17px]" />
+                  {s.telegram}
+                </button>
+                <button
+                  onClick={openWhatsApp}
+                  className="flex flex-[2] items-center justify-center gap-2 py-4 rounded-2xl font-bold text-white text-base active:opacity-90 transition-opacity"
+                  style={{ backgroundColor: '#25D366' }}
+                >
+                  <MessageCircle className="w-[17px] h-[17px]" />
+                  {s.whatsapp}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -298,6 +400,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
             onClick={e => e.stopPropagation()}
           >
             <div className="bg-white rounded-2xl overflow-hidden shadow-2xl border border-white/10">
+              {/* Agent header */}
               <div className="bg-gray-950 px-6 py-7 text-center">
                 {ownerPhoto ? (
                   <img
@@ -316,6 +419,8 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
                 <p className="text-white font-semibold text-base leading-tight">{property.ownerDisplayName ?? 'Property Owner'}</p>
                 <p className="text-gray-400 text-xs mt-1">{property.isAgent ? 'Licensed Agent' : 'Property Owner'}</p>
               </div>
+
+              {/* Price + contact buttons */}
               <div className="p-5 space-y-3">
                 <div className="text-center pb-3 border-b border-gray-100">
                   <p className="text-2xl font-bold text-gray-900">
@@ -326,20 +431,34 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
                     {[property.subCity, property.city].filter(Boolean).join(', ')}
                   </p>
                 </div>
-                {property.ownerEmail && (
+
+                {hasPhone ? (
                   <>
-                    <a
-                      href={`mailto:${property.ownerEmail}`}
-                      className="flex items-center justify-center gap-2 w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl text-sm font-semibold transition-colors shadow-md shadow-blue-600/20"
-                    >
-                      <Mail className="w-4 h-4" />
-                      {property.isAgent ? 'Contact Agent' : 'Contact Owner'}
-                    </a>
+                    <div className="flex gap-2.5">
+                      <button
+                        onClick={openTelegram}
+                        className="flex flex-1 items-center justify-center gap-1.5 py-3 rounded-xl font-semibold text-white text-sm active:opacity-90 transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: '#2AABEE' }}
+                      >
+                        <Send className="w-4 h-4" />
+                        Telegram
+                      </button>
+                      <button
+                        onClick={openWhatsApp}
+                        className="flex flex-[2] items-center justify-center gap-1.5 py-3 rounded-xl font-semibold text-white text-sm active:opacity-90 transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: '#25D366' }}
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        WhatsApp
+                      </button>
+                    </div>
                     <p className="text-[11px] text-gray-400 text-center leading-relaxed">
                       By proceeding, you agree to our{' '}
                       <a href="/terms" className="underline hover:text-gray-600 transition-colors">Terms of Use</a>.
                     </p>
                   </>
+                ) : (
+                  <p className="text-xs text-gray-400 text-center py-2">No contact number available</p>
                 )}
               </div>
             </div>

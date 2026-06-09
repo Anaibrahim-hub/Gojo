@@ -4,6 +4,7 @@ import { AuthProvider } from '@/lib/auth-context'
 import { FavoritesProvider } from '@/lib/favorites-context'
 import { ListingsProvider } from '@/lib/listings-context'
 import { MobileMapProvider } from '@/lib/mobile-map-context'
+import { LanguageProvider } from '@/lib/language-context'
 import MobileBottomNav from '@/app/components/MobileBottomNav'
 import '../styles/index.css'
 
@@ -87,10 +88,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body style={{ height: '100%', margin: 0 }}>
-        <AuthProvider><ListingsProvider><FavoritesProvider><MobileMapProvider>
+        <LanguageProvider><AuthProvider><ListingsProvider><FavoritesProvider><MobileMapProvider>
           {children}
           <MobileBottomNav />
-        </MobileMapProvider></FavoritesProvider></ListingsProvider></AuthProvider>
+        </MobileMapProvider></FavoritesProvider></ListingsProvider></AuthProvider></LanguageProvider>
       </body>
     </html>
   )

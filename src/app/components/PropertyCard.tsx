@@ -86,14 +86,23 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
     setTouchStart(0); setTouchEnd(0);
   };
 
+  const isNew = isNewListing(property.createdAt);
+  const badge = isNew ? 'New' : property.type === 'rent' ? 'Rent' : 'Sale';
+
+  const statParts: string[] = [];
+  if (property.beds > 0) statParts.push(`${property.beds} beds`);
+  if (property.baths > 0) statParts.push(`${property.baths} baths`);
+  if (property.sqft > 0) statParts.push(`${property.sqft.toLocaleString()} m²`);
+  const statsLine = statParts.join(' · ');
+
   return (
     <div
       className={`group bg-white overflow-hidden cursor-pointer transition-all duration-200
-        rounded-2xl shadow-md active:scale-[0.99]
-        lg:rounded-lg lg:active:scale-100 lg:border ${
+        rounded-2xl border border-gray-100 shadow-sm active:scale-[0.99]
+        lg:rounded-xl lg:active:scale-100 ${
         isHovered
-          ? 'lg:shadow-xl lg:border-gray-400'
-          : 'lg:shadow-sm lg:border-gray-200 lg:hover:shadow-lg lg:hover:border-gray-300'
+          ? 'lg:shadow-md lg:border-blue-200'
+          : 'lg:shadow-sm lg:hover:shadow-md lg:hover:border-gray-200'
       }`}
       onClick={onClick}
       onMouseEnter={onMouseEnter}
@@ -101,7 +110,8 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
     >
       {/* Photo */}
       <div
-        className="relative h-card-img-sm lg:h-card-img-lg overflow-hidden"
+        className="relative overflow-hidden"
+        style={{ height: 'clamp(180px, 62vw, 256px)' }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
@@ -109,77 +119,65 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
         <img
           src={images[currentImageIndex]}
           alt={property.address}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+          className="w-full h-full object-cover transition-transform duration-500 lg:group-hover:scale-[1.04]"
         />
 
-        {isNewListing(property.createdAt) && (
-          <span className="absolute top-3 left-3 z-10 bg-green-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-            New
-          </span>
-        )}
+        {/* Badge top-left */}
+        <span className={`absolute top-3 left-3 z-10 text-[10px] font-semibold px-2.5 py-1 rounded-full
+          ${isNew ? 'bg-blue-600 text-white' : 'bg-white text-gray-800'}`}>
+          {badge}
+        </span>
 
-        {/* Heart + Share */}
-        <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-10">
+        {/* Heart + Share — shadow-only on mobile, bg on desktop */}
+        <div className="absolute top-3 right-3 flex flex-col gap-2 z-10">
           <button
             onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
-            className="bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-md hover:bg-white hover:scale-110 transition-all"
+            className="p-1 lg:bg-white/90 lg:backdrop-blur-sm lg:rounded-full lg:shadow lg:hover:bg-white lg:hover:scale-110 transition-all"
+            style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.5))' }}
           >
-            <Heart className={`w-4 h-4 ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-gray-500'}`} />
+            <Heart className={`w-5 h-5 lg:w-4 lg:h-4 ${isFavorite(property.id) ? 'fill-red-500 text-red-500' : 'text-white lg:text-gray-500'}`} />
           </button>
           <button
             onClick={handleShare}
-            className="bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-md hover:bg-white hover:scale-110 transition-all"
+            className="p-1 lg:bg-white/90 lg:backdrop-blur-sm lg:rounded-full lg:shadow lg:hover:bg-white lg:hover:scale-110 transition-all"
+            style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.5))' }}
           >
-            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4 text-gray-500" />}
+            {copied
+              ? <Check className="w-5 h-5 lg:w-4 lg:h-4 text-green-400 lg:text-green-500" />
+              : <Share2 className="w-5 h-5 lg:w-4 lg:h-4 text-white lg:text-gray-500" />}
           </button>
         </div>
 
-        {/* Mobile: cinematic gradient + price/stats overlay */}
-        <div className="lg:hidden absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none" />
-        <div className="lg:hidden absolute bottom-0 left-0 right-0 px-3.5 pb-3.5 z-10 pointer-events-none">
-          <p className="text-white font-bold text-[17px] leading-tight drop-shadow-sm">
-            {formatETB(displayPrice)}
-            {showRent && <span className="text-sm font-normal opacity-75 ml-0.5">/mo</span>}
-          </p>
-          <div className="flex items-center gap-1.5 text-white/70 text-xs font-medium mt-0.5">
-            <span>{property.beds} bd</span>
-            <span className="text-white/40">·</span>
-            <span>{property.baths} ba</span>
-            {property.sqft > 0 && (
-              <>
-                <span className="text-white/40">·</span>
-                <span>{property.sqft.toLocaleString()} m²</span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Nav arrows */}
+        {/* Dot indicators — shown on both mobile and desktop */}
         {images.length > 1 && (
           <>
+            {/* Mobile: tap dots (no arrows) */}
+            <div className="lg:hidden absolute bottom-2.5 left-1/2 -translate-x-1/2 flex gap-1.5 pointer-events-none">
+              {images.map((_, i) => (
+                <div
+                  key={i}
+                  className={`rounded-full transition-all ${
+                    i === currentImageIndex
+                      ? 'w-2 h-2 bg-white'
+                      : 'w-1.5 h-1.5 bg-white/50'
+                  }`}
+                />
+              ))}
+            </div>
+
+            {/* Desktop: clickable dot indicators + arrows */}
             <button
               onClick={prev}
-              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full shadow transition-all
-                bg-black/30 backdrop-blur-sm p-1.5
-                lg:bg-white/90 lg:p-1 lg:opacity-0 lg:group-hover:opacity-100 lg:backdrop-blur-none lg:shadow-md"
+              className="hidden lg:block absolute left-2 top-1/2 -translate-y-1/2 rounded-full shadow bg-white/90 p-1 opacity-0 group-hover:opacity-100 transition-all"
             >
-              <ChevronLeft className="w-4 h-4 text-white lg:text-gray-700" />
+              <ChevronLeft className="w-4 h-4 text-gray-700" />
             </button>
             <button
               onClick={next}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full shadow transition-all
-                bg-black/30 backdrop-blur-sm p-1.5
-                lg:bg-white/90 lg:p-1 lg:opacity-0 lg:group-hover:opacity-100 lg:backdrop-blur-none lg:shadow-md"
+              className="hidden lg:block absolute right-2 top-1/2 -translate-y-1/2 rounded-full shadow bg-white/90 p-1 opacity-0 group-hover:opacity-100 transition-all"
             >
-              <ChevronRight className="w-4 h-4 text-white lg:text-gray-700" />
+              <ChevronRight className="w-4 h-4 text-gray-700" />
             </button>
-
-            {/* Mobile: photo count badge */}
-            <div className="lg:hidden absolute bottom-3.5 right-3.5 z-10 bg-black/45 backdrop-blur-sm px-2 py-0.5 rounded-full pointer-events-none">
-              <span className="text-white text-[11px] font-semibold">{currentImageIndex + 1}/{images.length}</span>
-            </div>
-
-            {/* Desktop: dot indicators */}
             <div className="hidden lg:flex absolute bottom-2.5 left-1/2 -translate-x-1/2 gap-1">
               {images.map((_, i) => (
                 <button
@@ -193,49 +191,23 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
         )}
       </div>
 
-      {/* Mobile: minimal info (price + stats shown in photo overlay) */}
-      <div className="lg:hidden px-3.5 py-2.5">
-        {property.address && (
-          <p className="text-[13px] text-gray-800 font-medium truncate">{property.address}</p>
-        )}
-        <div className="flex items-center justify-between mt-0.5">
-          <p className="text-xs text-gray-400 truncate">
-            {[property.subCity, property.city].filter(Boolean).join(', ')}
-          </p>
-          {property.propertyType && (
-            <span className="text-[11px] text-gray-400 flex-shrink-0 ml-2">{property.propertyType}</span>
-          )}
-        </div>
-      </div>
-
-      {/* Desktop: full info row (unchanged) */}
-      <div className="hidden lg:block px-3 py-2.5">
-        <p className="text-base font-bold text-gray-900 leading-tight mb-1">
+      {/* Info section — same structure on mobile + desktop */}
+      <div className="px-3.5 pt-3 pb-3.5 lg:px-3 lg:py-2.5">
+        <p className="text-[17px] lg:text-[15px] font-bold text-gray-900 leading-tight tracking-tight">
           {formatETB(displayPrice)}
-          {showRent && <span className="text-sm font-normal text-gray-500 ml-0.5">/mo</span>}
+          {showRent && <span className="text-sm font-normal text-gray-400 ml-0.5">/mo</span>}
         </p>
-        <div className="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800 mb-1.5">
-          <span>{property.beds} bd</span>
-          <span className="text-gray-300 font-normal">|</span>
-          <span>{property.baths} ba</span>
-          {property.sqft > 0 && (
-            <>
-              <span className="text-gray-300 font-normal">|</span>
-              <span>{property.sqft.toLocaleString()} m²</span>
-            </>
-          )}
-        </div>
-        {property.address && (
-          <p className="text-[13px] text-gray-600 truncate">{property.address}</p>
+        {statsLine && (
+          <p className="text-[13px] text-gray-700 font-medium mt-1 truncate">{statsLine}</p>
         )}
-        <div className="flex items-center justify-between mt-0.5">
-          <p className="text-xs text-gray-400 truncate">
+        {property.address && (
+          <p className="text-[12px] text-gray-500 mt-0.5 truncate">{property.address}</p>
+        )}
+        {(property.subCity || property.city) && (
+          <p className="text-[11px] text-gray-400 mt-0.5 truncate">
             {[property.subCity, property.city].filter(Boolean).join(', ')}
           </p>
-          {property.propertyType && (
-            <span className="text-[11px] text-gray-400 flex-shrink-0 ml-2">{property.propertyType}</span>
-          )}
-        </div>
+        )}
       </div>
     </div>
   );

@@ -3,6 +3,8 @@
 import { useState, useMemo, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useScreenT } from '@/lib/language-context'
+import LanguagePicker from './LanguagePicker'
 
 const MapView = dynamic(() => import('./MapView'), { ssr: false })
 import PropertyCard from './PropertyCard'
@@ -41,7 +43,28 @@ function saveRecent(item: RecentSearch) {
   localStorage.setItem(RECENT_KEY, JSON.stringify([item, ...deduped].slice(0, 5)))
 }
 
+const LISTINGS_DEFAULTS = {
+  buy: 'Buy',
+  rent: 'Rent',
+  map: 'Map',
+  list: 'List',
+  sortLabel: 'Sort:',
+  newest: 'Newest',
+  priceLow: 'Price: Low → High',
+  priceHigh: 'Price: High → Low',
+  mostBeds: 'Most Bedrooms',
+  mostBaths: 'Most Bathrooms',
+  largest: 'Largest Area',
+  homes: 'homes',
+  property: 'property',
+  properties: 'properties',
+  noHomes: 'No homes found',
+  noHomesHint: 'Try adjusting your filters or search',
+  loadMore: 'Load more homes',
+} as const
+
 export default function ListingsView() {
+  const s = useScreenT(LISTINGS_DEFAULTS)
   const router = useRouter()
   const searchParams = useSearchParams()
   const modeParam = searchParams.get('mode')
@@ -189,16 +212,16 @@ export default function ListingsView() {
   }, [filters, listingMode, showAllTypes, sortBy, searchQuery, apiListings])
 
   const sortOptions: { value: typeof sortBy; label: string }[] = [
-    { value: 'recommended', label: 'Newest' },
-    { value: 'price-low',   label: 'Price: Low → High' },
-    { value: 'price-high',  label: 'Price: High → Low' },
-    { value: 'beds',        label: 'Most Bedrooms' },
-    { value: 'baths',       label: 'Most Bathrooms' },
-    { value: 'sqft',        label: 'Largest Area' },
+    { value: 'recommended', label: s.newest },
+    { value: 'price-low',   label: s.priceLow },
+    { value: 'price-high',  label: s.priceHigh },
+    { value: 'beds',        label: s.mostBeds },
+    { value: 'baths',       label: s.mostBaths },
+    { value: 'sqft',        label: s.largest },
   ]
 
   return (
-    <div className="size-full flex flex-col">
+    <div className="size-full flex flex-col overflow-x-hidden">
 
       {/* ── Desktop: FilterPanel ── */}
       <div className="hidden lg:block flex-shrink-0">
@@ -217,7 +240,7 @@ export default function ListingsView() {
       </div>
 
       {/* ── Mobile: fixed search header ── */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-100 h-14 flex items-center px-3">
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-100 h-14 flex items-center px-3 gap-2">
         <div
           onClick={openSearchModal}
           className="flex-1 flex items-center gap-2 bg-gray-100 rounded-full px-4 py-2.5 text-left cursor-pointer"
@@ -239,6 +262,7 @@ export default function ListingsView() {
             </button>
           )}
         </div>
+        <LanguagePicker compact dropUp={false} />
       </div>
 
       {/* ── Mobile: spacer for fixed header ── */}
@@ -253,7 +277,7 @@ export default function ListingsView() {
               onClick={() => { setShowAllTypes(false); setListingMode(m) }}
               className={`px-4 py-1 text-xs font-semibold rounded-full transition-all ${listingMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
             >
-              {m === 'buy' ? 'Buy' : 'Rent'}
+              {m === 'buy' ? s.buy : s.rent}
             </button>
           ))}
         </div>
@@ -304,11 +328,11 @@ export default function ListingsView() {
             <span className="text-sm text-gray-500">
               {loadingListings
                 ? <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />Loading…</span>
-                : <><strong className="text-gray-900 font-semibold">{filteredProperties.length}</strong> homes</>
+                : <><strong className="text-gray-900 font-semibold">{filteredProperties.length}</strong> {s.homes}</>
               }
             </span>
             <div className="relative flex items-center gap-1.5">
-              <span className="text-xs font-medium text-gray-400">Sort:</span>
+              <span className="text-xs font-medium text-gray-400">{s.sortLabel}</span>
               <select
                 value={sortBy}
                 onChange={e => setSortBy(e.target.value as typeof sortBy)}
@@ -328,7 +352,7 @@ export default function ListingsView() {
           {/* Mobile count */}
           {!loadingListings && filteredProperties.length > 0 && (
             <p className="lg:hidden text-xs font-semibold text-gray-700 px-4 pt-2 pb-1">
-              {filteredProperties.length} {filteredProperties.length === 1 ? 'property' : 'properties'}
+              {filteredProperties.length} {filteredProperties.length === 1 ? s.property : s.properties}
             </p>
           )}
 
@@ -341,8 +365,8 @@ export default function ListingsView() {
               <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
                 <Home className="w-6 h-6 text-gray-400" />
               </div>
-              <p className="text-gray-800 font-semibold">No homes found</p>
-              <p className="text-gray-400 text-sm mt-1">Try adjusting your filters or search</p>
+              <p className="text-gray-800 font-semibold">{s.noHomes}</p>
+              <p className="text-gray-400 text-sm mt-1">{s.noHomesHint}</p>
             </div>
           ) : (
             <div className="p-3 pb-28 lg:pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -364,7 +388,7 @@ export default function ListingsView() {
                     disabled={loadingMore}
                     className="flex items-center gap-2 px-8 py-2.5 border border-gray-200 rounded-full text-sm font-semibold text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-all disabled:opacity-50"
                   >
-                    {loadingMore ? <><Loader2 className="w-4 h-4 animate-spin" />Loading…</> : 'Load more homes'}
+                    {loadingMore ? <><Loader2 className="w-4 h-4 animate-spin" />Loading…</> : s.loadMore}
                   </button>
                 </div>
               )}
@@ -385,9 +409,9 @@ export default function ListingsView() {
         className="lg:hidden fixed bottom-[4.75rem] left-1/2 -translate-x-1/2 z-40 bg-gray-950 text-white px-5 py-2.5 rounded-full shadow-[0_4px_24px_rgba(0,0,0,0.35)] transition-all flex items-center gap-2 text-sm font-semibold active:scale-95"
       >
         {mobileView === 'map' ? (
-          <><List className="w-4 h-4" /><span>List</span></>
+          <><List className="w-4 h-4" /><span>{s.list}</span></>
         ) : (
-          <><Map className="w-4 h-4" /><span>Map</span></>
+          <><Map className="w-4 h-4" /><span>{s.map}</span></>
         )}
       </button>
 
@@ -421,7 +445,7 @@ export default function ListingsView() {
                   if (e.key === 'Escape') setShowSearchModal(false)
                 }}
                 placeholder="Search city, area, or property type…"
-                className="flex-1 bg-transparent outline-none text-[15px] text-[#222222] placeholder:text-[#717171]"
+                className="flex-1 bg-transparent outline-none text-base text-[#222222] placeholder:text-[#717171]"
                 autoFocus
               />
               {inputValue && (
@@ -573,7 +597,7 @@ export default function ListingsView() {
                 onClick={() => setShowMobileFilter(false)}
                 className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold text-sm"
               >
-                Show {filteredProperties.length} {filteredProperties.length === 1 ? 'property' : 'properties'}
+                Show {filteredProperties.length} {filteredProperties.length === 1 ? s.property : s.properties}
               </button>
             </div>
           </div>
