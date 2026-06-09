@@ -35,8 +35,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [displayName, setDisplayName] = useState<string | null>(null)
 
   useEffect(() => {
-    // Register observer first — Firebase requires the auth state listener to be
-    // set up before any sign-in operation so its internal pending promise is ready.
+    if (isSignInWithEmailLink(auth, window.location.href)) {
+      const email = window.localStorage.getItem('emailForSignIn')
+      if (email) {
+        signInWithEmailLink(auth, email, window.location.href)
+          .then(() => {
+            window.localStorage.removeItem('emailForSignIn')
+            window.history.replaceState({}, '', window.location.pathname)
+          })
+          .catch(console.error)
+      }
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u)
       setDisplayName(u?.displayName ?? null)
@@ -51,19 +61,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPhotoURL(isThirdParty ? null : url)
       setLoading(false)
     })
-
-    if (isSignInWithEmailLink(auth, window.location.href)) {
-      const email = window.localStorage.getItem('emailForSignIn')
-      if (email) {
-        signInWithEmailLink(auth, email, window.location.href)
-          .then(() => {
-            window.localStorage.removeItem('emailForSignIn')
-            window.history.replaceState({}, '', window.location.pathname)
-          })
-          .catch(console.error)
-      }
-    }
-
     return unsubscribe
   }, [])
 
