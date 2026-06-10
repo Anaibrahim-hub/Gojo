@@ -118,36 +118,36 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
     else onCloseRef.current();
   };
 
-  if (!property) return null;
-
-  const isOwner = !!user && (user.email === property.ownerEmail || user.uid === property.firestoreId);
-  const ownerPhoto = isOwner ? photoURL : (property.ownerPhotoURL ?? null);
-  const images = property.photos?.length ? property.photos : [property.image];
-
+  // These must be above the early return so hooks are called unconditionally
   const wantBuy = listingMode === 'buy';
-  const hasSalePrice = (property.price ?? 0) > 0;
-  const hasRentPrice = (property.rent ?? 0) > 0;
+  const hasSalePrice = (property?.price ?? 0) > 0;
+  const hasRentPrice = (property?.rent ?? 0) > 0;
   const showRent = (!wantBuy || !hasSalePrice) && hasRentPrice;
-  const displayPrice = showRent ? property.rent : property.price;
-  const displayPriceLabel = formatETB(displayPrice) + (showRent ? '/mo' : '');
-  const hasOwner = !property.agentId && (property.ownerDisplayName || property.ownerEmail);
-
-  const rawPhone = property.agentPhone || fallbackPhone;
-  const hasPhone = !!rawPhone;
+  const displayPrice = showRent ? property?.rent : property?.price;
+  const displayPriceLabel = formatETB(displayPrice ?? 0) + (showRent ? '/mo' : '');
+  const rawPhone = property?.agentPhone || fallbackPhone;
 
   const openWhatsApp = useCallback(() => {
-    if (!rawPhone) return;
+    if (!property || !rawPhone) return;
     const phone = phoneForWhatsApp(rawPhone);
     const msg = buildContactMessage(property, displayPriceLabel);
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
   }, [rawPhone, property, displayPriceLabel]);
 
   const openTelegram = useCallback(() => {
-    if (!rawPhone) return;
+    if (!property || !rawPhone) return;
     const e164 = phoneForTelegram(rawPhone);
     const msg = buildContactMessage(property, displayPriceLabel);
     window.open(`https://t.me/${e164}?text=${encodeURIComponent(msg)}`, '_blank');
   }, [rawPhone, property, displayPriceLabel]);
+
+  if (!property) return null;
+
+  const isOwner = !!user && (user.email === property.ownerEmail || user.uid === property.firestoreId);
+  const ownerPhoto = isOwner ? photoURL : (property.ownerPhotoURL ?? null);
+  const images = property.photos?.length ? property.photos : [property.image];
+  const hasOwner = !property.agentId && (property.ownerDisplayName || property.ownerEmail);
+  const hasPhone = !!rawPhone;
 
   const nextLightbox = () => lightboxIndex !== null && setLightboxIndex((lightboxIndex + 1) % images.length);
   const prevLightbox = () => lightboxIndex !== null && setLightboxIndex((lightboxIndex - 1 + images.length) % images.length);
