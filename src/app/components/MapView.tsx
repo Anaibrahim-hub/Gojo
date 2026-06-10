@@ -26,6 +26,7 @@ export default function MapView({ properties, onPropertyClick, hoveredPropertyId
   const mapRef = useRef<MapRef>(null)
   const [popupProperty, setPopupProperty] = useState<Property | null>(null)
   const [satellite, setSatellite] = useState(false)
+  const isTouchRef = useRef(false)
 
   useEffect(() => {
     if (flyTo && mapRef.current) {
@@ -83,8 +84,10 @@ export default function MapView({ properties, onPropertyClick, hoveredPropertyId
             style={{ zIndex: isHovered ? 10 : 1 }}
           >
             <div
+              onTouchStart={() => { isTouchRef.current = true }}
               onClick={() => onPropertyClick(property)}
               onMouseEnter={() => {
+                if (isTouchRef.current) { isTouchRef.current = false; return }
                 onMarkerHover(property.id)
                 setPopupProperty(property)
               }}
