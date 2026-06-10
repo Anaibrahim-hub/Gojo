@@ -217,8 +217,9 @@ export default function SettingsView() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#F7F7F7] flex flex-col items-center justify-center gap-3 px-6">
-        <div className="lg:hidden h-14 absolute top-0 left-0 right-0" />
+      <div className="min-h-screen bg-[#F7F7F7] flex flex-col items-center justify-center gap-3 px-6"
+        style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
+      >
         <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm mb-2">
           <User className="w-8 h-8 text-[#717171]" />
         </div>
@@ -247,12 +248,12 @@ export default function SettingsView() {
       </div>
 
       {/* Mobile: top padding for fixed header */}
-      <div className="lg:hidden h-14" />
+      <div className="lg:hidden h-10" />
 
       <div className="max-w-lg mx-auto lg:px-0 py-2 space-y-2">
 
         {/* ── Profile card ── */}
-        <div className="flex flex-col items-center pt-9 pb-6 gap-1">
+        <div className="flex flex-col items-center pt-4 pb-3 lg:pt-9 lg:pb-6 gap-1">
           {/* Avatar */}
           <div className="relative mb-2">
             {/* Mobile: plain avatar, no camera overlay */}

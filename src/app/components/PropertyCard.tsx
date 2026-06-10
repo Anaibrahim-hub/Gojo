@@ -98,8 +98,8 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
   return (
     <div
       className={`group bg-white overflow-hidden cursor-pointer transition-all duration-200
-        rounded-2xl border border-gray-100 shadow-sm active:scale-[0.99]
-        lg:rounded-xl lg:active:scale-100 ${
+        rounded-2xl border border-gray-100 shadow-sm
+        lg:rounded-xl ${
         isHovered
           ? 'lg:shadow-md lg:border-blue-200'
           : 'lg:shadow-sm lg:hover:shadow-md lg:hover:border-gray-200'

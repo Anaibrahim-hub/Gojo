@@ -662,8 +662,21 @@ export default function ListRentView() {
     <div className="size-full flex flex-col">
       <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} />
 
-      {/* Header */}
-      <div className="bg-white border-b border-gray-100 px-4 lg:px-6 h-14 flex items-center gap-3 flex-shrink-0">
+      {/* Mobile header */}
+      <div className="lg:hidden sticky top-0 z-50 bg-white px-2 pt-5 pb-3 flex items-center justify-between flex-shrink-0">
+        <span className="text-[28px] font-extrabold text-[#222222]">My Listings</span>
+        {canAddMore && (
+          <button
+            onClick={() => user ? setShowForm(true) : setSignInOpen(true)}
+            className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-800 active:bg-black text-white px-4 py-2 rounded-full font-semibold text-sm transition-all active:scale-95"
+          >
+            <Plus className="w-4 h-4" /> Add
+          </button>
+        )}
+      </div>
+
+      {/* Desktop header */}
+      <div className="hidden lg:flex bg-white border-b border-gray-100 px-6 h-14 items-center gap-3 flex-shrink-0">
         <button onClick={() => router.back()} className="p-1.5 hover:bg-gray-100 rounded-lg transition-all flex-shrink-0">
           <ArrowLeft className="w-5 h-5 text-gray-700" />
         </button>

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useLanguage, useScreenT } from '@/lib/language-context';
-import { X, ChevronLeft, ChevronRight, Bed, Bath, Maximize, Images, Flag, Send, MessageCircle } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Bed, Bath, Maximize, Images, Flag, Send, MessageCircle, MapPin, Heart, Share2 } from 'lucide-react';
 import { type Property } from '@/app/data/properties';
 import { useAuth } from '@/lib/auth-context';
 import { formatETB } from '@/app/components/ui/utils';
 import ReportModal from '@/app/components/ReportModal';
+import { useFavorites } from '@/lib/favorites-context';
 
 interface PropertyModalProps {
   property: Property | null;
@@ -13,6 +14,8 @@ interface PropertyModalProps {
 }
 
 const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? '';
+
+const GALLERY_H = 380;
 
 const MODAL_DEFAULTS = {
   propertyDetails: 'Property Details',
@@ -54,20 +57,26 @@ function phoneForTelegram(raw: string): string {
 export default function PropertyModal({ property, onClose, listingMode }: PropertyModalProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [mobilePhotoIndex, setMobilePhotoIndex] = useState(0);
-  const [mobileTouchStartX, setMobileTouchStartX] = useState(0);
   const [reportOpen, setReportOpen] = useState(false);
   const [fallbackPhone, setFallbackPhone] = useState<string | null>(null);
   const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
-  const { user, photoURL } = useAuth();
+  const { user, photoURL, displayName } = useAuth();
+  const { toggleFavorite, isFavorite } = useFavorites();
   const { language, translate } = useLanguage();
   const s = useScreenT(MODAL_DEFAULTS);
   const onCloseRef = React.useRef(onClose);
   const pushedHistoryRef = React.useRef(false);
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const lightboxTouchStartX = useRef<number | null>(null);
   useEffect(() => { onCloseRef.current = onClose; });
 
-  // Reset translation when property or language changes
   useEffect(() => { setTranslatedDesc(null) }, [property?.firestoreId, language]);
+
+  useEffect(() => {
+    setMobilePhotoIndex(0);
+    if (carouselRef.current) carouselRef.current.scrollLeft = 0;
+  }, [property?.firestoreId]);
 
   const handleTranslateDesc = useCallback(async () => {
     if (!property?.description) return;
@@ -79,6 +88,13 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
       setTranslating(false);
     }
   }, [property?.description, translate]);
+
+  const handleCarouselScroll = useCallback(() => {
+    if (!carouselRef.current) return;
+    const idx = Math.round(carouselRef.current.scrollLeft / carouselRef.current.clientWidth);
+    setMobilePhotoIndex(idx);
+  }, []);
+
 
   useEffect(() => {
     if (!WORKER_URL) return;
@@ -118,7 +134,6 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
     else onCloseRef.current();
   };
 
-  // These must be above the early return so hooks are called unconditionally
   const wantBuy = listingMode === 'buy';
   const hasSalePrice = (property?.price ?? 0) > 0;
   const hasRentPrice = (property?.rent ?? 0) > 0;
@@ -141,29 +156,44 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
     window.open(`https://t.me/${e164}?text=${encodeURIComponent(msg)}`, '_blank');
   }, [rawPhone, property, displayPriceLabel]);
 
+  const handleShare = useCallback(() => {
+    if (!property) return;
+    const addr = [property.address, property.subCity, property.city].filter(Boolean).join(', ');
+    const text = `${displayPriceLabel} — ${addr}`;
+    if (navigator.share) {
+      navigator.share({ title: text, url: window.location.href }).catch(() => {});
+    } else {
+      navigator.clipboard?.writeText(window.location.href).catch(() => {});
+    }
+  }, [property, displayPriceLabel]);
+
   if (!property) return null;
 
   const isOwner = !!user && (user.email === property.ownerEmail || user.uid === property.firestoreId);
   const ownerPhoto = isOwner ? photoURL : (property.ownerPhotoURL ?? null);
+  const ownerName =
+    (isOwner ? (displayName ?? user?.email?.split('@')[0]) : null) ??
+    property.ownerDisplayName ??
+    property.ownerEmail?.split('@')[0] ??
+    (property.isAgent ? 'Licensed Agent' : 'Property Owner');
   const images = property.photos?.length ? property.photos : [property.image];
-  const hasOwner = !property.agentId && (property.ownerDisplayName || property.ownerEmail);
+  const showContactCard = !!(property.ownerDisplayName || property.ownerEmail || rawPhone);
   const hasPhone = !!rawPhone;
 
   const nextLightbox = () => lightboxIndex !== null && setLightboxIndex((lightboxIndex + 1) % images.length);
   const prevLightbox = () => lightboxIndex !== null && setLightboxIndex((lightboxIndex - 1 + images.length) % images.length);
 
-  const onMobileTouchEnd = (e: React.TouchEvent) => {
-    const dx = e.changedTouches[0].clientX - mobileTouchStartX;
-    if (Math.abs(dx) > 50) {
-      dx < 0
-        ? setMobilePhotoIndex(i => (i + 1) % images.length)
-        : setMobilePhotoIndex(i => (i - 1 + images.length) % images.length);
-    }
+  const handleLightboxTouchStart = (e: React.TouchEvent) => { lightboxTouchStartX.current = e.touches[0].clientX; };
+  const handleLightboxTouchEnd = (e: React.TouchEvent) => {
+    if (lightboxTouchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - lightboxTouchStartX.current;
+    lightboxTouchStartX.current = null;
+    if (Math.abs(dx) < 40) return;
+    if (dx < 0) nextLightbox(); else prevLightbox();
   };
 
   return (
     <>
-      {/* Modal */}
       <div
         className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[1000] flex items-end lg:items-center justify-center lg:gap-4 lg:px-4"
         onClick={handleClose}
@@ -172,15 +202,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
           className="relative w-full h-full lg:h-auto lg:max-h-[92vh] lg:max-w-4xl xl:max-w-5xl bg-white lg:rounded-2xl overflow-hidden shadow-2xl flex flex-col"
           onClick={e => e.stopPropagation()}
         >
-          {/* Mobile: back arrow (top-left, over photo) */}
-          <button
-            onClick={handleClose}
-            className="lg:hidden absolute top-4 left-4 z-20 bg-black/35 backdrop-blur-sm p-2 rounded-full"
-          >
-            <ChevronLeft className="w-5 h-5 text-white" />
-          </button>
-
-          {/* Desktop: X button (top-right) */}
+          {/* Desktop X button */}
           <button
             onClick={handleClose}
             className="hidden lg:flex absolute top-4 right-4 z-20 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white transition-all hover:scale-110 items-center justify-center"
@@ -188,239 +210,377 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
             <X className="w-5 h-5 text-gray-700" />
           </button>
 
-          {/* ── Scrollable content ── */}
-          <div className="flex-1 overflow-y-auto">
-            {/* ── Desktop photo grid ── */}
-            <div className="hidden lg:block h-[400px] xl:h-[460px] overflow-hidden">
-              {images.length === 1 ? (
-                <div className="relative h-full cursor-pointer overflow-hidden group" onClick={() => setLightboxIndex(0)}>
-                  <img src={images[0]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all" />
-                </div>
-              ) : (
-                <div className={`grid h-full gap-1 ${images.length >= 3 ? 'grid-cols-[3fr_2fr]' : 'grid-cols-2'}`}>
-                  <div className="relative h-full cursor-pointer overflow-hidden group" onClick={() => setLightboxIndex(0)}>
-                    <img src={images[0]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
-                  </div>
-                  <div className="grid grid-rows-2 gap-1 h-full min-h-0 overflow-hidden">
-                    <div className="relative cursor-pointer overflow-hidden group min-h-0" onClick={() => setLightboxIndex(1)}>
-                      <img src={images[1]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
-                    </div>
-                    <div className="relative cursor-pointer overflow-hidden group min-h-0" onClick={() => setLightboxIndex(2)}>
-                      <img src={images[2] ?? images[1]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
-                      {images.length > 3 && (
-                        <div className="absolute inset-0 bg-black/45 flex items-center justify-center gap-2 hover:bg-black/55 transition-all">
-                          <Images className="w-5 h-5 text-white" />
-                          <span className="text-white text-sm font-semibold">+{images.length - 3} more</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+          {/* ── MOBILE LAYOUT ── */}
+          <div className="lg:hidden flex flex-col h-full">
 
-            {/* ── Mobile photo carousel ── */}
-            <div
-              className="lg:hidden relative h-80 cursor-pointer"
-              onClick={() => setLightboxIndex(mobilePhotoIndex)}
-              onTouchStart={(e) => setMobileTouchStartX(e.targetTouches[0].clientX)}
-              onTouchEnd={onMobileTouchEnd}
-            >
-              <img
-                src={images[mobilePhotoIndex]}
-                alt="Property"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/45 to-transparent pointer-events-none" />
-              <div className="absolute top-3 right-3 bg-black/35 backdrop-blur-sm p-1.5 rounded-full pointer-events-none">
-                <Maximize className="w-4 h-4 text-white" />
+            {/* Scrollable area: gallery + content sheet scroll together */}
+            <div className="flex-1 overflow-y-auto">
+
+              {/* Gallery */}
+              <div className="relative flex-shrink-0" style={{ height: GALLERY_H }}>
+                <div
+                  ref={carouselRef}
+                  className="flex h-full overflow-x-auto snap-x snap-mandatory [&::-webkit-scrollbar]:hidden"
+                  style={{ scrollbarWidth: 'none' } as React.CSSProperties}
+                  onScroll={handleCarouselScroll}
+                >
+                  {images.map((img, i) => (
+                    <div
+                      key={i}
+                      className="snap-start shrink-0 w-full h-full cursor-pointer"
+                      onClick={() => setLightboxIndex(i)}
+                    >
+                      <img src={img} alt="Property" className="w-full h-full object-cover" />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Bottom gradient */}
+                <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
+
+                {/* Back arrow */}
+                <button
+                  onClick={e => { e.stopPropagation(); handleClose(); }}
+                  className="absolute left-4 z-10 w-10 h-10 rounded-full bg-black/35 backdrop-blur-sm flex items-center justify-center"
+                  style={{ top: 'max(32px, env(safe-area-inset-top))' }}
+                >
+                  <ChevronLeft className="w-5 h-5 text-white" />
+                </button>
+
+                {/* Share + heart */}
+                <div className="absolute right-4 z-10 flex gap-2" style={{ top: 'max(32px, env(safe-area-inset-top))' }}>
+                  <button
+                    onClick={e => { e.stopPropagation(); handleShare(); }}
+                    className="w-10 h-10 rounded-full bg-black/35 backdrop-blur-sm flex items-center justify-center"
+                  >
+                    <Share2 className="w-[17px] h-[17px] text-white" />
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); toggleFavorite(property.id); }}
+                    className="w-10 h-10 rounded-full bg-black/35 backdrop-blur-sm flex items-center justify-center"
+                  >
+                    <Heart
+                      className="w-[17px] h-[17px]"
+                      style={{ color: isFavorite(property.id) ? '#FF3B30' : 'white', fill: isFavorite(property.id) ? '#FF3B30' : 'transparent' }}
+                    />
+                  </button>
+                </div>
+
+                {/* Dots + count badge */}
+                {images.length > 1 && (
+                  <div className="absolute bottom-14 left-0 right-0 flex items-center px-4">
+                    <div className="flex-1" />
+                    <div className="flex items-center gap-1">
+                      {images.map((_, i) => (
+                        <div
+                          key={i}
+                          className={`h-1.5 rounded-full transition-all duration-200 ${i === mobilePhotoIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50'}`}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex-1 flex justify-end">
+                      <div className="bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-full">
+                        <span className="text-white text-xs font-semibold">{mobilePhotoIndex + 1} / {images.length}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-              {images.length > 1 && (
-                <>
-                  <button
-                    onClick={e => { e.stopPropagation(); setMobilePhotoIndex(i => (i - 1 + images.length) % images.length); }}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/30 backdrop-blur-sm p-2 rounded-full"
-                  >
-                    <ChevronLeft className="w-5 h-5 text-white" />
-                  </button>
-                  <button
-                    onClick={e => { e.stopPropagation(); setMobilePhotoIndex(i => (i + 1) % images.length); }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/30 backdrop-blur-sm p-2 rounded-full"
-                  >
-                    <ChevronRight className="w-5 h-5 text-white" />
-                  </button>
-                  <div className="absolute bottom-3.5 right-3.5 bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-full pointer-events-none">
-                    <span className="text-white text-xs font-semibold">{mobilePhotoIndex + 1} / {images.length}</span>
-                  </div>
-                </>
-              )}
-            </div>
 
-            <div className="flex-1 px-5 lg:px-8 py-5 lg:py-6">
-
-              {/* Price + stats */}
-              <div className="mb-5 lg:mb-6">
-                <p className="text-3xl lg:text-4xl font-bold text-gray-900 leading-tight mb-2">
-                  {formatETB(displayPrice)}
-                  {showRent && <span className="text-xl font-normal text-gray-500 ml-1">/mo</span>}
+              {/* Content sheet — overlaps gallery with rounded top corners */}
+              <div className="relative -mt-7 bg-white rounded-t-3xl">
+                <div className="px-5 pt-6 pb-4">
+                <p className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gray-400 mb-1">
+                  {showRent ? 'FOR RENT' : 'FOR SALE'}
                 </p>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-gray-600">
-                  <span className="flex items-center gap-1.5">
-                    <Bed className="w-4 h-4 text-gray-400" />
-                    <strong className="text-gray-900">{property.beds}</strong> Beds
-                  </span>
-                  <span className="text-gray-200">|</span>
-                  <span className="flex items-center gap-1.5">
-                    <Bath className="w-4 h-4 text-gray-400" />
-                    <strong className="text-gray-900">{property.baths}</strong> Baths
-                  </span>
+
+                <p className="text-[28px] font-extrabold text-gray-900 tracking-tight leading-tight mb-1">
+                  {formatETB(displayPrice)}
+                  {showRent && <span className="text-xl font-normal text-gray-400 ml-1">/mo</span>}
+                </p>
+
+                {property.propertyType && (
+                  <p className="text-sm text-gray-500 font-medium capitalize mb-2">{property.propertyType}</p>
+                )}
+
+                <div className="flex items-start gap-1.5 mt-1 mb-4">
+                  <MapPin className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-gray-500 leading-snug">
+                    {[property.address, property.subCity, property.city].filter(Boolean).join(', ')}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 py-3">
+                  {property.beds > 0 && (
+                    <div className="flex items-center gap-1">
+                      <Bed className="w-3.5 h-3.5 text-gray-500" />
+                      <span className="text-sm font-semibold text-gray-900">{property.beds} Beds</span>
+                    </div>
+                  )}
+                  {property.beds > 0 && property.baths > 0 && <span className="text-gray-300">·</span>}
+                  {property.baths > 0 && (
+                    <div className="flex items-center gap-1">
+                      <Bath className="w-3.5 h-3.5 text-gray-500" />
+                      <span className="text-sm font-semibold text-gray-900">{property.baths} Baths</span>
+                    </div>
+                  )}
+                  {(property.beds > 0 || property.baths > 0) && property.sqft > 0 && <span className="text-gray-300">·</span>}
                   {property.sqft > 0 && (
-                    <>
-                      <span className="text-gray-200">|</span>
-                      <span className="flex items-center gap-1.5">
-                        <Maximize className="w-4 h-4 text-gray-400" />
-                        <strong className="text-gray-900">{property.sqft.toLocaleString()}</strong> m²
-                      </span>
-                    </>
+                    <div className="flex items-center gap-1">
+                      <Maximize className="w-3.5 h-3.5 text-gray-500" />
+                      <span className="text-sm font-semibold text-gray-900">{property.sqft} m²</span>
+                    </div>
                   )}
                   {property.furnished && (
-                    <span className="ml-1 px-2.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-semibold">{s.furnished}</span>
+                    <span className="ml-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-semibold">{s.furnished}</span>
                   )}
                 </div>
-                <p className="text-gray-500 text-sm mt-2">
-                  {[property.address, property.subCity, property.city].filter(Boolean).join(', ')}
-                </p>
+
+                <div className="h-px bg-gray-100 mb-5" />
+
+                {property.description && (
+                  <div className="mb-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-base font-bold text-gray-900">{s.aboutHome}</h3>
+                      {language !== 'en' && (
+                        <button
+                          onClick={translatedDesc ? () => setTranslatedDesc(null) : handleTranslateDesc}
+                          disabled={translating}
+                          className="text-xs text-blue-600 font-semibold disabled:opacity-50"
+                        >
+                          {translating ? s.translating : translatedDesc ? s.showOriginal : s.translate}
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">
+                      {translatedDesc ?? property.description}
+                    </p>
+                  </div>
+                )}
+
+                {property.amenities && property.amenities.length > 0 && (
+                  <div className="mb-5">
+                    <div className="h-px bg-gray-100 mb-5" />
+                    <h3 className="text-base font-bold text-gray-900 mb-3">{s.amenities}</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {property.amenities.map(a => (
+                        <span key={a} className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700">{a}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {user && (
+                  <div className="pt-3 border-t border-gray-100">
+                    <button
+                      onClick={() => setReportOpen(true)}
+                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      <Flag className="w-3.5 h-3.5" />
+                      {s.reportListing}
+                    </button>
+                  </div>
+                )}
               </div>
+              </div>{/* end content sheet */}
+            </div>{/* end scroll wrapper */}
 
-              <div className="border-t border-gray-100 mb-5" />
-
-              {/* Property details */}
-              {(property.propertyType || property.availableFrom || property.subCity || property.woreda || property.kebele || property.landmark) && (
-                <div className="mb-5 lg:mb-6">
-                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">{s.propertyDetails}</h3>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-0 text-sm">
-                    {[
-                      [s.type, property.propertyType],
-                      [s.city, property.city],
-                      [s.subCity, property.subCity],
-                      [s.woreda, property.woreda],
-                      [s.kebele, property.kebele],
-                      [s.landmark, property.landmark],
-                      [s.availableFrom, property.availableFrom
-                        ? new Date(property.availableFrom).toLocaleDateString('en-ET', { year: 'numeric', month: 'long', day: 'numeric' })
-                        : undefined],
-                    ].filter(([, v]) => !!v).map(([label, value]) => (
-                      <div key={label as string} className="flex justify-between py-2.5 border-b border-gray-50">
-                        <span className="text-gray-400">{label}</span>
-                        <span className="font-medium text-gray-800 text-right ml-4">{value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Description */}
-              {property.description && (
-                <div className="mb-5 lg:mb-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{s.aboutHome}</h3>
-                    {language !== 'en' && (
-                      <button
-                        onClick={translatedDesc ? () => setTranslatedDesc(null) : handleTranslateDesc}
-                        disabled={translating}
-                        className="text-xs text-blue-600 font-semibold disabled:opacity-50"
-                      >
-                        {translating ? s.translating : translatedDesc ? s.showOriginal : s.translate}
-                      </button>
-                    )}
-                  </div>
-                  <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">{translatedDesc ?? property.description}</p>
-                </div>
-              )}
-
-              {/* Amenities */}
-              {property.amenities && property.amenities.length > 0 && (
-                <div className="mb-5 lg:mb-6">
-                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">{s.amenities}</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {property.amenities.map(a => (
-                      <span key={a} className="px-3 py-1.5 bg-gray-50 border border-gray-200 text-gray-700 rounded-full text-xs font-medium">{a}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {user && (
-                <div className="pt-2 border-t border-gray-100">
+            {/* CTA bar — pinned at bottom outside scroll */}
+            {hasPhone && (
+              <div
+                className="flex-shrink-0 px-4 py-3 border-t border-gray-100 bg-white"
+                style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+              >
+                <div className="flex gap-3">
                   <button
-                    onClick={() => setReportOpen(true)}
-                    className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
+                    onClick={openTelegram}
+                    className="flex flex-1 items-center justify-center gap-2 px-3 py-4 rounded-2xl font-bold text-white text-base active:opacity-90 transition-opacity"
+                    style={{ backgroundColor: '#2AABEE' }}
                   >
-                    <Flag className="w-3.5 h-3.5" />
-                    {s.reportListing}
+                    <Send className="w-[17px] h-[17px]" />
+                    {s.telegram}
+                  </button>
+                  <button
+                    onClick={openWhatsApp}
+                    className="flex flex-[2] items-center justify-center gap-2 py-4 rounded-2xl font-bold text-white text-base active:opacity-90 transition-opacity"
+                    style={{ backgroundColor: '#25D366' }}
+                  >
+                    <MessageCircle className="w-[17px] h-[17px]" />
+                    {s.whatsapp}
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
-          {/* ── Mobile sticky contact bar ── */}
-          {hasPhone && (
-            <div className="lg:hidden flex-shrink-0 px-4 py-3 border-t border-gray-100 bg-white" style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}>
-              <div className="flex gap-3">
-                <button
-                  onClick={openTelegram}
-                  className="flex flex-1 items-center justify-center gap-2 py-4 rounded-2xl font-bold text-white text-base active:opacity-90 transition-opacity"
-                  style={{ backgroundColor: '#2AABEE' }}
-                >
-                  <Send className="w-[17px] h-[17px]" />
-                  {s.telegram}
-                </button>
-                <button
-                  onClick={openWhatsApp}
-                  className="flex flex-[2] items-center justify-center gap-2 py-4 rounded-2xl font-bold text-white text-base active:opacity-90 transition-opacity"
-                  style={{ backgroundColor: '#25D366' }}
-                >
-                  <MessageCircle className="w-[17px] h-[17px]" />
-                  {s.whatsapp}
-                </button>
+          {/* ── DESKTOP LAYOUT ── */}
+          <div className="hidden lg:flex flex-1 flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto">
+              {/* Desktop photo grid */}
+              <div className="h-[400px] xl:h-[460px] overflow-hidden">
+                {images.length === 1 ? (
+                  <div className="relative h-full cursor-pointer overflow-hidden group" onClick={() => setLightboxIndex(0)}>
+                    <img src={images[0]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all" />
+                  </div>
+                ) : (
+                  <div className={`grid h-full gap-1 ${images.length >= 3 ? 'grid-cols-[3fr_2fr]' : 'grid-cols-2'}`}>
+                    <div className="relative h-full cursor-pointer overflow-hidden group" onClick={() => setLightboxIndex(0)}>
+                      <img src={images[0]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
+                    </div>
+                    <div className="grid grid-rows-2 gap-1 h-full min-h-0 overflow-hidden">
+                      <div className="relative cursor-pointer overflow-hidden group min-h-0" onClick={() => setLightboxIndex(1)}>
+                        <img src={images[1]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
+                      </div>
+                      <div className="relative cursor-pointer overflow-hidden group min-h-0" onClick={() => setLightboxIndex(2)}>
+                        <img src={images[2] ?? images[1]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
+                        {images.length > 3 && (
+                          <div className="absolute inset-0 bg-black/45 flex items-center justify-center gap-2 hover:bg-black/55 transition-all">
+                            <Images className="w-5 h-5 text-white" />
+                            <span className="text-white text-sm font-semibold">+{images.length - 3} more</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Desktop content */}
+              <div className="px-8 py-6">
+                <div className="mb-6">
+                  <p className="text-3xl lg:text-4xl font-bold text-gray-900 leading-tight mb-2">
+                    {formatETB(displayPrice)}
+                    {showRent && <span className="text-xl font-normal text-gray-500 ml-1">/mo</span>}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-gray-600">
+                    <span className="flex items-center gap-1.5">
+                      <Bed className="w-4 h-4 text-gray-400" />
+                      <strong className="text-gray-900">{property.beds}</strong> Beds
+                    </span>
+                    <span className="text-gray-200">|</span>
+                    <span className="flex items-center gap-1.5">
+                      <Bath className="w-4 h-4 text-gray-400" />
+                      <strong className="text-gray-900">{property.baths}</strong> Baths
+                    </span>
+                    {property.sqft > 0 && (
+                      <>
+                        <span className="text-gray-200">|</span>
+                        <span className="flex items-center gap-1.5">
+                          <Maximize className="w-4 h-4 text-gray-400" />
+                          <strong className="text-gray-900">{property.sqft.toLocaleString()}</strong> m²
+                        </span>
+                      </>
+                    )}
+                    {property.furnished && (
+                      <span className="ml-1 px-2.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-semibold">{s.furnished}</span>
+                    )}
+                  </div>
+                  <p className="text-gray-500 text-sm mt-2">
+                    {[property.address, property.subCity, property.city].filter(Boolean).join(', ')}
+                  </p>
+                </div>
+
+                <div className="border-t border-gray-100 mb-5" />
+
+                {(property.propertyType || property.availableFrom || property.subCity || property.woreda || property.kebele || property.landmark) && (
+                  <div className="mb-6">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">{s.propertyDetails}</h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-0 text-sm">
+                      {[
+                        [s.type, property.propertyType],
+                        [s.city, property.city],
+                        [s.subCity, property.subCity],
+                        [s.woreda, property.woreda],
+                        [s.kebele, property.kebele],
+                        [s.landmark, property.landmark],
+                        [s.availableFrom, property.availableFrom
+                          ? new Date(property.availableFrom).toLocaleDateString('en-ET', { year: 'numeric', month: 'long', day: 'numeric' })
+                          : undefined],
+                      ].filter(([, v]) => !!v).map(([label, value]) => (
+                        <div key={label as string} className="flex justify-between py-2.5 border-b border-gray-50">
+                          <span className="text-gray-400">{label}</span>
+                          <span className="font-medium text-gray-800 text-right ml-4">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {property.description && (
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{s.aboutHome}</h3>
+                      {language !== 'en' && (
+                        <button
+                          onClick={translatedDesc ? () => setTranslatedDesc(null) : handleTranslateDesc}
+                          disabled={translating}
+                          className="text-xs text-blue-600 font-semibold disabled:opacity-50"
+                        >
+                          {translating ? s.translating : translatedDesc ? s.showOriginal : s.translate}
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">{translatedDesc ?? property.description}</p>
+                  </div>
+                )}
+
+                {property.amenities && property.amenities.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">{s.amenities}</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {property.amenities.map(a => (
+                        <span key={a} className="px-3 py-1.5 bg-gray-50 border border-gray-200 text-gray-700 rounded-full text-xs font-medium">{a}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {user && (
+                  <div className="pt-2 border-t border-gray-100">
+                    <button
+                      onClick={() => setReportOpen(true)}
+                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      <Flag className="w-3.5 h-3.5" />
+                      {s.reportListing}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
-          )}
+          </div>
         </div>
 
-        {/* ── Desktop contact card — outside the modal ── */}
-        {hasOwner && (
+        {/* Desktop contact card */}
+        {showContactCard && (
           <div
             className="hidden lg:flex flex-col w-72 xl:w-80 flex-shrink-0 self-center"
             onClick={e => e.stopPropagation()}
           >
             <div className="bg-white rounded-2xl overflow-hidden shadow-2xl border border-white/10">
-              {/* Agent header */}
               <div className="bg-gray-950 px-6 py-7 text-center">
                 {ownerPhoto ? (
                   <img
                     src={ownerPhoto}
-                    alt={property.ownerDisplayName ?? 'Owner'}
+                    alt={ownerName}
                     className="w-16 h-16 rounded-full object-cover ring-2 ring-white/20 mx-auto mb-3"
                     referrerPolicy="no-referrer"
                   />
                 ) : (
                   <div className="w-16 h-16 rounded-full bg-white/10 ring-2 ring-white/20 mx-auto mb-3 flex items-center justify-center">
                     <span className="text-white text-2xl font-bold">
-                      {(property.ownerDisplayName ?? property.ownerEmail ?? '?')[0].toUpperCase()}
+                      {ownerName[0].toUpperCase()}
                     </span>
                   </div>
                 )}
-                <p className="text-white font-semibold text-base leading-tight">{property.ownerDisplayName ?? 'Property Owner'}</p>
+                <p className="text-white font-semibold text-base leading-tight">{ownerName}</p>
                 <p className="text-gray-400 text-xs mt-1">{property.isAgent ? 'Licensed Agent' : 'Property Owner'}</p>
               </div>
 
-              {/* Price + contact buttons */}
               <div className="p-5 space-y-3">
                 <div className="text-center pb-3 border-b border-gray-100">
                   <p className="text-2xl font-bold text-gray-900">
@@ -437,7 +597,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
                     <div className="flex gap-2.5">
                       <button
                         onClick={openTelegram}
-                        className="flex flex-1 items-center justify-center gap-1.5 py-3 rounded-xl font-semibold text-white text-sm active:opacity-90 transition-opacity hover:opacity-90"
+                        className="flex flex-1 items-center justify-center gap-1.5 px-3 py-3 rounded-xl font-semibold text-white text-sm active:opacity-90 transition-opacity hover:opacity-90"
                         style={{ backgroundColor: '#2AABEE' }}
                       >
                         <Send className="w-4 h-4" />
@@ -466,27 +626,30 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
         )}
       </div>
 
-      {/* ── Fullscreen lightbox ── */}
+      {/* Fullscreen lightbox */}
       {lightboxIndex !== null && (
         <div
           className="fixed inset-0 bg-black/95 z-[2000] flex items-center justify-center"
           onClick={() => setLightboxIndex(null)}
+          onTouchStart={handleLightboxTouchStart}
+          onTouchEnd={handleLightboxTouchEnd}
         >
           <button onClick={() => setLightboxIndex(null)} className="absolute top-4 right-4 text-white p-3 hover:bg-white/10 rounded-full transition-all z-10">
             <X className="w-7 h-7" />
           </button>
-          <button onClick={e => { e.stopPropagation(); prevLightbox(); }} className="absolute left-4 text-white p-3 hover:bg-white/10 rounded-full transition-all">
+          {/* Desktop-only navigation arrows */}
+          <button onClick={e => { e.stopPropagation(); prevLightbox(); }} className="hidden lg:flex absolute left-4 text-white p-3 hover:bg-white/10 rounded-full transition-all">
             <ChevronLeft className="w-7 h-7" />
           </button>
-          <div className="max-w-6xl max-h-[90vh] w-full px-10 lg:px-16" onClick={e => e.stopPropagation()}>
+          <div className="w-full h-full lg:max-w-6xl lg:max-h-[90vh] lg:px-16 flex flex-col justify-center" onClick={e => e.stopPropagation()}>
             <img
               src={images[lightboxIndex]}
               alt={`Photo ${lightboxIndex + 1}`}
-              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl mx-auto"
+              className="w-full lg:max-w-full max-h-screen lg:max-h-[85vh] object-contain lg:rounded-lg lg:shadow-2xl mx-auto"
             />
             <p className="text-gray-500 text-center mt-4 text-sm">{lightboxIndex + 1} / {images.length}</p>
           </div>
-          <button onClick={e => { e.stopPropagation(); nextLightbox(); }} className="absolute right-4 text-white p-3 hover:bg-white/10 rounded-full transition-all">
+          <button onClick={e => { e.stopPropagation(); nextLightbox(); }} className="hidden lg:flex absolute right-4 text-white p-3 hover:bg-white/10 rounded-full transition-all">
             <ChevronRight className="w-7 h-7" />
           </button>
         </div>

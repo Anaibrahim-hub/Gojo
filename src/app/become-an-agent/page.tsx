@@ -5,7 +5,7 @@ import AgentApplicationView from '@/app/components/AgentApplicationView'
 export const metadata: Metadata = {
   title: 'Become a Real Estate Agent | Yevilla',
   description: 'Apply to become a verified Yevilla agent. List multiple properties, reach buyers and renters across Ethiopia, and grow your real estate business.',
-  alternates: { canonical: '/become-an-agent' },
+  alternates: { canonical: 'https://yevilla.com/become-an-agent' },
 }
 
 export default function BecomeAnAgentPage() {

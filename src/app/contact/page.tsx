@@ -5,7 +5,7 @@ import ContactView from '@/app/components/ContactView'
 export const metadata: Metadata = {
   title: 'Contact Us | Yevilla',
   description: 'Get in touch with the Yevilla team. Reach out with questions about listings, your account, or how to list your property in Ethiopia.',
-  alternates: { canonical: '/contact' },
+  alternates: { canonical: 'https://yevilla.com/contact' },
 }
 
 export default function ContactPage() {

@@ -4,7 +4,7 @@ import SettingsView from '@/app/components/SettingsView'
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
-  alternates: { canonical: '/settings' },
+  alternates: { canonical: 'https://yevilla.com/settings' },
 }
 
 export default function SettingsPage() {
