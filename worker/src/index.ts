@@ -30,7 +30,7 @@ const ALLOWED_MIME: Record<string, string> = {
 
 const ALLOWED_CITIES = new Set([
   'Addis Ababa', 'Dire Dawa', 'Hawassa', 'Mekelle', 'Gondar',
-  'Bahir Dar', 'Adama', 'Jimma', 'Dessie', 'Jijiga', 'Other',
+  'Bahir Dar', 'Adama', 'Bishoftu', 'Jimma', 'Dessie', 'Jijiga', 'Other',
 ])
 
 const ALLOWED_PROPERTY_TYPES = new Set([

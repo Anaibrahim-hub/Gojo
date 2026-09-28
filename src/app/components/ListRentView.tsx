@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle, LogIn, MapPin, Home, BedDouble, Bath, Ruler, Edit2, Upload, X, Eye, Heart, Video } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle, LogIn, Home, BedDouble, Bath, Ruler, Edit2, Upload, X, Eye, Heart, Video } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import SignInModal from './SignInModal'
 import { formatETB } from '@/app/components/ui/utils'
@@ -208,9 +208,9 @@ export default function ListRentView() {
   const [amenities, setAmenities] = useState<Record<string, boolean>>(
     Object.fromEntries(AMENITIES.map((a) => [a, false]))
   )
+  // Not editable on the form; kept so saving an older listing doesn't clear its coordinates
   const [lat, setLat] = useState('')
   const [lng, setLng] = useState('')
-  const [locating, setLocating] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -302,9 +302,6 @@ export default function ListRentView() {
     if (form.areaSqm && (parseFloat(form.areaSqm) <= 0 || parseFloat(form.areaSqm) > 50_000)) return 'Area must be between 1 and 50,000 m².'
     if (form.description.length > 2000) return 'Description must be 2,000 characters or less.'
     if (form.landmark.length > 200) return 'Landmark must be 200 characters or less.'
-    if (!lat !== !lng) return 'Enter both latitude and longitude, or leave both empty.'
-    if (lat && (isNaN(parseFloat(lat)) || parseFloat(lat) < -90 || parseFloat(lat) > 90)) return 'Latitude must be between -90 and 90.'
-    if (lng && (isNaN(parseFloat(lng)) || parseFloat(lng) < -180 || parseFloat(lng) > 180)) return 'Longitude must be between -180 and 180.'
     if (images.filter(img => !img.uploading).length === 0) return 'Please upload at least one photo of your property.'
     return null
   }
@@ -391,16 +388,6 @@ export default function ListRentView() {
     } finally {
       setDeleting(false)
     }
-  }
-
-  function detectLocation() {
-    if (!navigator.geolocation) return
-    setLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      (pos) => { setLat(pos.coords.latitude.toFixed(6)); setLng(pos.coords.longitude.toFixed(6)); setLocating(false) },
-      () => setLocating(false),
-      { timeout: 10000 }
-    )
   }
 
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -694,7 +681,7 @@ export default function ListRentView() {
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">City</label>
                   <select value={form.city} onChange={setField('city')} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-900 bg-white text-sm">
                     <option value="">Select city</option>
-                    {['Addis Ababa','Dire Dawa','Hawassa','Mekelle','Gondar','Bahir Dar','Adama','Jimma','Dessie','Jijiga','Other'].map(c => <option key={c}>{c}</option>)}
+                    {['Addis Ababa','Dire Dawa','Hawassa','Mekelle','Gondar','Bahir Dar','Adama','Bishoftu','Jimma','Dessie','Jijiga','Other'].map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
@@ -710,22 +697,9 @@ export default function ListRentView() {
                   <input type="text" value={form.kebele} onChange={setField('kebele')} placeholder="e.g. 01" maxLength={100} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-900 text-sm" />
                 </div>
               </div>
-              <div className="mb-3">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Landmark / Area Description</label>
                 <input type="text" value={form.landmark} onChange={setField('landmark')} placeholder="e.g. Near Bole Atlas Hotel, behind the blue building" maxLength={200} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-900 text-sm" />
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-sm font-medium text-gray-700">GPS Coordinates <span className="font-normal text-gray-400">(optional)</span></label>
-                  <button type="button" onClick={detectLocation} disabled={locating} className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50 transition-all">
-                    {locating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
-                    {locating ? 'Detecting…' : 'Use my location'}
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <input type="text" value={lat} onChange={e => setLat(e.target.value)} placeholder="Latitude  e.g. 9.005401" className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-900 text-sm font-mono" />
-                  <input type="text" value={lng} onChange={e => setLng(e.target.value)} placeholder="Longitude  e.g. 38.763611" className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-900 text-sm font-mono" />
-                </div>
               </div>
             </div>
 
