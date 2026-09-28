@@ -35,7 +35,10 @@ export default function VideoPlayer({
   title: string
   /** When false the video pauses (e.g. scrolled away or on another slide). */
   active?: boolean
-  /** Start playing (muted, as browsers require) whenever it becomes active. */
+  /**
+   * Start playing whenever it becomes active, with sound when the browser allows it
+   * (the tap that opened the feed counts); otherwise muted until the next tap.
+   */
   autoPlay?: boolean
   /**
    * Where the control bar sits: 'bottom' (inside a gallery slide) or 'screen-bottom'
@@ -50,20 +53,28 @@ export default function VideoPlayer({
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [playing, setPlaying] = useState(false)
-  const [muted, setMuted] = useState(autoPlay)
+  const [muted, setMuted] = useState(false)
   const [time, setTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [fullscreen, setFullscreen] = useState(false)
   const [started, setStarted] = useState(false)
+  // Autoplay feeds only show the big play button when the viewer paused (or playback
+  // was refused), so it doesn't flash while swiping between videos.
+  const [showPlayButton, setShowPlayButton] = useState(false)
+  // Muted by the browser's autoplay policy rather than by the viewer.
+  const autoMutedRef = useRef(false)
 
   const play = useCallback(() => {
     const v = videoRef.current
     if (!v) return
+    // Retry with sound: a tap since the last attempt may have unlocked it.
+    if (autoMutedRef.current) { v.muted = false; setMuted(false); autoMutedRef.current = false }
     v.play().catch(() => {
       // Autoplay with sound is blocked: retry muted.
       v.muted = true
       setMuted(true)
-      v.play().catch(() => {})
+      autoMutedRef.current = true
+      v.play().catch(() => setShowPlayButton(true))
     })
   }, [])
 
@@ -98,8 +109,15 @@ export default function VideoPlayer({
   const toggle = () => {
     const v = videoRef.current
     if (!v) return
+    // The first tap on an autoplaying video that the browser muted turns the sound on.
+    if (autoMutedRef.current && !v.paused) {
+      v.muted = false
+      setMuted(false)
+      autoMutedRef.current = false
+      return
+    }
     if (v.paused) play()
-    else v.pause()
+    else { v.pause(); setShowPlayButton(true) }
   }
 
   const seekTo = (t: number) => {
@@ -129,7 +147,7 @@ export default function VideoPlayer({
       if (e.key === ' ' || e.key === 'k') { e.preventDefault(); toggle() }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); seekTo(v.currentTime - 5) }
       else if (e.key === 'ArrowRight') { e.preventDefault(); seekTo(v.currentTime + 5) }
-      else if (e.key === 'm') setMuted(m => !m)
+      else if (e.key === 'm') { autoMutedRef.current = false; setMuted(m => !m) }
       else if (e.key === 'f') toggleFullscreen()
     }
     window.addEventListener('keydown', onKey)
@@ -150,7 +168,7 @@ export default function VideoPlayer({
         preload="metadata"
         aria-label={title}
         onClick={toggle}
-        onPlay={() => { setPlaying(true); setStarted(true) }}
+        onPlay={() => { setPlaying(true); setStarted(true); setShowPlayButton(false) }}
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
         onTimeUpdate={e => setTime(e.currentTarget.currentTime)}
@@ -160,7 +178,7 @@ export default function VideoPlayer({
       />
 
       {/* Big play button while paused */}
-      {!playing && (
+      {!playing && (!autoPlay || showPlayButton) && (
         <button
           type="button"
           onClick={toggle}
@@ -210,7 +228,7 @@ export default function VideoPlayer({
           className="h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded-full [touch-action:none] [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
         />
         <span className="shrink-0 text-xs font-semibold tabular-nums opacity-80">{formatTime(duration)}</span>
-        <ControlButton label={muted ? 'Unmute' : 'Mute'} onClick={() => setMuted(m => !m)}>
+        <ControlButton label={muted ? 'Unmute' : 'Mute'} onClick={() => { autoMutedRef.current = false; setMuted(m => !m) }}>
           {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
         </ControlButton>
         <ControlButton label={fullscreen ? 'Exit full screen' : 'Full screen'} onClick={toggleFullscreen}>
