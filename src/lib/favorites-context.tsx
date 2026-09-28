@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo, ReactNode } from 'react'
 import { useAuth } from './auth-context'
 import { auth } from './firebase'
+import { useSignInPrompt } from './sign-in-prompt-context'
 
 const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
 const STORAGE_KEY = 'gojo_favorites'
@@ -68,6 +69,9 @@ async function patchFavorite(id: number, action: 'add' | 'remove'): Promise<void
 
 export function FavoritesProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
+  const { promptSignIn } = useSignInPrompt()
+  // A listing a signed-out user tapped the heart on; saved once they sign in.
+  const pendingRef = useRef<number | null>(null)
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
   const favoritesRef = useRef<Set<number>>(new Set())
   const lastFetchRef = useRef<number>(0)
@@ -76,9 +80,10 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
 
   const loadFavorites = useCallback(async () => {
     if (!user) {
-      const local = loadLocal()
-      setFavorites(local)
-      favoritesRef.current = local
+      // Saving requires an account, so signed-out visitors see no saved hearts.
+      // (Any favorites stored locally before this rule are merged in at sign-in.)
+      setFavorites(new Set())
+      favoritesRef.current = new Set()
       return
     }
 
@@ -98,8 +103,19 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     lastFetchRef.current = Date.now()
   }, [user])
 
-  // Reload on sign-in / sign-out
-  useEffect(() => { loadFavorites() }, [loadFavorites])
+  // Reload on sign-in / sign-out, then save the heart tapped before signing in
+  useEffect(() => {
+    loadFavorites().then(() => {
+      const id = pendingRef.current
+      if (!user || id === null) return
+      pendingRef.current = null
+      if (favoritesRef.current.has(id)) return
+      const next = new Set(favoritesRef.current).add(id)
+      setFavorites(next)
+      favoritesRef.current = next
+      patchFavorite(id, 'add')
+    })
+  }, [loadFavorites, user])
 
   // Re-fetch when the tab regains focus (30s debounce to avoid hammering on rapid switches)
   useEffect(() => {
@@ -111,6 +127,12 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   }, [user, loadFavorites])
 
   const toggleFavorite = useCallback(async (id: number) => {
+    if (!user) {
+      pendingRef.current = id
+      promptSignIn({ onDismiss: () => { pendingRef.current = null } })
+      return
+    }
+
     const next = new Set(favoritesRef.current)
     if (next.has(id)) next.delete(id)
     else next.add(id)
@@ -119,14 +141,9 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     setFavorites(next)
     favoritesRef.current = next
 
-    if (!user) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...next]))
-      return
-    }
-
     const action = next.has(id) ? 'add' : 'remove'
     await patchFavorite(id, action)
-  }, [user])
+  }, [user, promptSignIn])
 
   const isFavorite = useCallback((id: number) => favorites.has(id), [favorites])
 

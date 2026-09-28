@@ -4,6 +4,7 @@ import { X, ChevronLeft, ChevronRight, Bed, Bath, Maximize, Images, Flag, Send, 
 import { type Property } from '@/app/data/properties';
 import { useAuth } from '@/lib/auth-context';
 import { formatETB } from '@/app/components/ui/utils';
+import { img as cdnImg } from '@/lib/image';
 import ReportModal from '@/app/components/ReportModal';
 import { useFavorites } from '@/lib/favorites-context';
 
@@ -230,7 +231,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
                       className="snap-start shrink-0 w-full h-full cursor-pointer"
                       onClick={() => setLightboxIndex(i)}
                     >
-                      <img src={img} alt="Property" className="w-full h-full object-cover" />
+                      <img src={cdnImg(img, { width: 1080 })} alt="Property" loading={i === 0 ? undefined : 'lazy'} decoding="async" className="w-full h-full object-cover" />
                     </div>
                   ))}
                 </div>
@@ -420,22 +421,22 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
               <div className="h-[400px] xl:h-[460px] overflow-hidden">
                 {images.length === 1 ? (
                   <div className="relative h-full cursor-pointer overflow-hidden group" onClick={() => setLightboxIndex(0)}>
-                    <img src={images[0]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
+                    <img src={cdnImg(images[0], { width: 1080 })} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all" />
                   </div>
                 ) : (
                   <div className={`grid h-full gap-1 ${images.length >= 3 ? 'grid-cols-[3fr_2fr]' : 'grid-cols-2'}`}>
                     <div className="relative h-full cursor-pointer overflow-hidden group" onClick={() => setLightboxIndex(0)}>
-                      <img src={images[0]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
+                      <img src={cdnImg(images[0], { width: 1080 })} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
                     </div>
                     <div className="grid grid-rows-2 gap-1 h-full min-h-0 overflow-hidden">
                       <div className="relative cursor-pointer overflow-hidden group min-h-0" onClick={() => setLightboxIndex(1)}>
-                        <img src={images[1]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
+                        <img src={cdnImg(images[1], { width: 1080 })} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
                       </div>
                       <div className="relative cursor-pointer overflow-hidden group min-h-0" onClick={() => setLightboxIndex(2)}>
-                        <img src={images[2] ?? images[1]} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
+                        <img src={cdnImg(images[2] ?? images[1], { width: 1080 })} alt="Property" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all pointer-events-none" />
                         {images.length > 3 && (
                           <div className="absolute inset-0 bg-black/45 flex items-center justify-center gap-2 hover:bg-black/55 transition-all">
@@ -643,7 +644,7 @@ export default function PropertyModal({ property, onClose, listingMode }: Proper
           </button>
           <div className="w-full h-full lg:max-w-6xl lg:max-h-[90vh] lg:px-16 flex flex-col justify-center" onClick={e => e.stopPropagation()}>
             <img
-              src={images[lightboxIndex]}
+              src={cdnImg(images[lightboxIndex], { width: 1080 })}
               alt={`Photo ${lightboxIndex + 1}`}
               className="w-full lg:max-w-full max-h-screen lg:max-h-[85vh] object-contain lg:rounded-lg lg:shadow-2xl mx-auto"
             />

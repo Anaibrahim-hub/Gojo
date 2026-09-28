@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle, LogIn, MapPin, Home, BedDouble, Bath, Ruler, Edit2, Upload, X, Eye, Heart } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle, LogIn, MapPin, Home, BedDouble, Bath, Ruler, Edit2, Upload, X, Eye, Heart, Video } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import SignInModal from './SignInModal'
 import { formatETB } from '@/app/components/ui/utils'
+import { rentUnit } from '@/lib/listing-utils'
 
 const AMENITIES = [
   'Parking', 'Laundry', 'Pet Friendly', 'Generator',
@@ -71,6 +72,55 @@ function xhrUpload(
   })
 }
 
+// Raw-body upload for videos: the worker streams the body straight into R2.
+function xhrUploadVideo(
+  url: string, file: File, token: string,
+  onProgress: (pct: number) => void
+): Promise<{ url: string; key: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', url)
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.setRequestHeader('Content-Type', file.type)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 95))
+    }
+    xhr.onload = () => {
+      onProgress(100)
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)) }
+        catch { reject(new Error('Invalid response from server')) }
+      } else {
+        try { reject(new Error(JSON.parse(xhr.responseText).error || 'Upload failed')) }
+        catch { reject(new Error(`Upload failed (${xhr.status})`)) }
+      }
+    }
+    xhr.onerror = () => reject(new Error('Network error — check your connection'))
+    xhr.ontimeout = () => reject(new Error('Upload timed out'))
+    xhr.timeout = 15 * 60 * 1000
+    xhr.send(file)
+  })
+}
+
+const RATE_LABEL = { month: 'Monthly Rent', night: 'Nightly Rate', day: 'Daily Rate' } as const
+const RATE_SUFFIX = { month: '/mo', night: '/night', day: '/day' } as const
+
+const VIDEO_TYPES = ['video/mp4', 'video/quicktime']
+const MAX_VIDEO_MB = 50
+const MAX_VIDEO_SECONDS = 60
+
+// Reads a local video file's length (seconds) before uploading it.
+function readVideoDuration(file: File): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const v = document.createElement('video')
+    v.preload = 'metadata'
+    v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(v.duration) }
+    v.onerror = () => { URL.revokeObjectURL(url); reject(new Error('unreadable')) }
+    v.src = url
+  })
+}
+
 interface ImageEntry {
   id: string
   uploading: boolean
@@ -92,6 +142,7 @@ interface ListingData {
   bathrooms: number | null; areaSqm: number | null; availableFrom: string | null
   description: string; amenities: string[]
   photos: { url: string; key: string }[]
+  video?: { url: string; key: string } | null
   status: string
   viewCount?: number
   likeCount?: number
@@ -125,6 +176,12 @@ export default function ListRentView() {
 
   const [images, setImages] = useState<ImageEntry[]>([])
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [video, setVideo] = useState<{ url: string; key: string } | null>(null)
+  // Key of the video already saved on the listing being edited; removing it only
+  // takes effect (and deletes the file) when the listing is saved.
+  const [savedVideoKey, setSavedVideoKey] = useState<string | null>(null)
+  const [videoProgress, setVideoProgress] = useState<number | null>(null)
+  const [videoError, setVideoError] = useState<string | null>(null)
   const [amenities, setAmenities] = useState<Record<string, boolean>>(
     Object.fromEntries(AMENITIES.map((a) => [a, false]))
   )
@@ -183,6 +240,9 @@ export default function ListRentView() {
         url: p.url, key: p.key, preview: '',
       }))
     )
+    setVideo(listing.video ?? null)
+    setSavedVideoKey(listing.video?.key ?? null)
+    setVideoError(null)
     setEditingId(listing.id)
     setSubmitError(null)
     setIsEditing(true)
@@ -194,6 +254,10 @@ export default function ListRentView() {
     setEditingId(null)
     setForm(EMPTY_FORM)
     setImages([])
+    setVideo(null)
+    setSavedVideoKey(null)
+    setVideoProgress(null)
+    setVideoError(null)
     setAmenities(Object.fromEntries(AMENITIES.map((a) => [a, false])))
     setLat(''); setLng('')
     setSubmitError(null)
@@ -203,8 +267,9 @@ export default function ListRentView() {
     if (!form.city) return 'Please select a city.'
     if (!form.propertyType) return 'Please select a property type.'
     if (form.listingType === 'rent') {
-      if (!form.monthlyRent || parseFloat(form.monthlyRent) <= 0) return 'Please enter a valid monthly rent.'
-      if (parseFloat(form.monthlyRent) > 100_000_000) return 'Monthly rent exceeds the maximum allowed value.'
+      const rateLabel = RATE_LABEL[rentUnit(form.propertyType)].toLowerCase()
+      if (!form.monthlyRent || parseFloat(form.monthlyRent) <= 0) return `Please enter a valid ${rateLabel}.`
+      if (parseFloat(form.monthlyRent) > 100_000_000) return `The ${rateLabel} exceeds the maximum allowed value.`
     } else {
       if (!form.salePrice || parseFloat(form.salePrice) <= 0) return 'Please enter a valid sale price.'
       if (parseFloat(form.salePrice) > 1_000_000_000) return 'Sale price exceeds the maximum allowed value.'
@@ -248,6 +313,7 @@ export default function ListRentView() {
         description: form.description,
         amenities: Object.entries(amenities).filter(([, v]) => v).map(([k]) => k),
         photos: images.filter(img => !img.uploading).map(img => ({ url: img.url, key: img.key })),
+        video,
       }
       const token = await user.getIdToken()
       const res = await fetch(`${WORKER_URL}/listing`, {
@@ -380,6 +446,53 @@ export default function ListRentView() {
     }
   }
 
+  async function handleVideoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!user) { setSignInOpen(true); return }
+    if (!WORKER_URL) { setVideoError('Upload service not configured.'); return }
+    if (!VIDEO_TYPES.includes(file.type)) { setVideoError('Please choose an MP4 or MOV video.'); return }
+    if (file.size > MAX_VIDEO_MB * 1024 * 1024) {
+      setVideoError(`Video is ${Math.ceil(file.size / 1024 / 1024)} MB — the limit is ${MAX_VIDEO_MB} MB. Try a shorter clip or record in 720p.`)
+      return
+    }
+    const seconds = await readVideoDuration(file).catch(() => null)
+    if (seconds !== null && Number.isFinite(seconds) && seconds > MAX_VIDEO_SECONDS + 0.5) {
+      setVideoError(`Video is ${Math.round(seconds)} seconds long — the limit is ${MAX_VIDEO_SECONDS} seconds. Please trim it and try again.`)
+      return
+    }
+    setVideoError(null)
+    setVideoProgress(0)
+    try {
+      const token = await user.getIdToken()
+      const uploaded = await xhrUploadVideo(`${WORKER_URL}/upload-video`, file, token, setVideoProgress)
+      discardUnsavedVideo()
+      setVideo(uploaded)
+    } catch (err) {
+      setVideoError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setVideoProgress(null)
+    }
+  }
+
+  // Deletes the current video from storage if it was uploaded in this session and
+  // never saved to the listing (a saved one is cleaned up by the server on save).
+  function discardUnsavedVideo() {
+    const key = video?.key
+    if (!key || key === savedVideoKey || !user || !WORKER_URL) return
+    user.getIdToken().then(token =>
+      fetch(`${WORKER_URL}/image/${encodeURIComponent(key)}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+      })
+    ).catch(console.error)
+  }
+
+  function removeVideo() {
+    discardUnsavedVideo()
+    setVideo(null)
+  }
+
   const uploadingCount = images.filter(i => i.uploading).length
   const readyCount = images.filter(i => !i.uploading).length
 
@@ -443,11 +556,13 @@ export default function ListRentView() {
                     key={type}
                     type="button"
                     onClick={() => setForm(prev => ({ ...prev, listingType: type }))}
+                    disabled={type === 'sale' && rentUnit(form.propertyType) !== 'month'}
+                    title={type === 'sale' && rentUnit(form.propertyType) !== 'month' ? 'Hotels and event venues are listed for rent only' : undefined}
                     className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${
                       form.listingType === type
                         ? 'bg-white text-gray-900 shadow-sm'
                         : 'text-gray-500 hover:text-gray-700'
-                    }`}
+                    } disabled:opacity-40 disabled:cursor-not-allowed`}
                   >
                     {type === 'rent' ? 'For Rent' : 'For Sale'}
                   </button>
@@ -520,6 +635,55 @@ export default function ListRentView() {
               )}
             </div>
 
+            {/* Video tour */}
+            <div className="bg-white rounded-2xl p-5 border border-gray-100">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Video Tour <span className="font-medium normal-case tracking-normal">(optional)</span></p>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">A short walkthrough plays first when people open your listing. Up to {MAX_VIDEO_SECONDS} seconds, MP4 or MOV, max {MAX_VIDEO_MB} MB.</p>
+
+              {videoError && (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 mb-4">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />{videoError}
+                </div>
+              )}
+
+              {videoProgress !== null ? (
+                <div className="flex flex-col items-center justify-center gap-2 w-full h-36 border border-gray-200 rounded-xl px-6">
+                  <span className="text-sm font-bold text-gray-700">Uploading video… {videoProgress}%</span>
+                  <div className="w-full max-w-xs bg-gray-200 rounded-full h-1.5">
+                    <div className="bg-gray-900 h-1.5 rounded-full transition-all duration-200" style={{ width: `${videoProgress}%` }} />
+                  </div>
+                  <span className="text-xs text-gray-400">Keep this page open until it finishes.</span>
+                </div>
+              ) : video ? (
+                <div className="relative w-full max-w-sm rounded-xl overflow-hidden border border-gray-100 bg-black group">
+                  <video src={video.url} controls playsInline preload="metadata" className="w-full aspect-video object-contain" />
+                  <button
+                    type="button"
+                    onClick={removeVideo}
+                    aria-label="Remove video"
+                    className="absolute top-2 right-2 bg-black/50 hover:bg-red-500 text-white p-1.5 rounded-full transition-all"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : user ? (
+                <label className="flex flex-col items-center justify-center w-full h-36 border border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-gray-500 hover:bg-gray-50 transition-all">
+                  <Video className="w-8 h-8 text-gray-400 mb-2" />
+                  <p className="text-sm text-gray-600 font-medium">Click to upload a video</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Up to {MAX_VIDEO_SECONDS} seconds · MP4 or MOV · max {MAX_VIDEO_MB} MB</p>
+                  <input type="file" accept="video/mp4,video/quicktime" className="hidden" onChange={handleVideoUpload} />
+                </label>
+              ) : (
+                <button type="button" onClick={() => setSignInOpen(true)}
+                  className="flex flex-col items-center justify-center w-full h-36 border border-dashed border-gray-300 rounded-xl hover:border-gray-500 hover:bg-gray-50 transition-all">
+                  <LogIn className="w-8 h-8 text-gray-400 mb-2" />
+                  <p className="text-sm text-gray-600 font-medium">Sign in to upload a video</p>
+                </button>
+              )}
+            </div>
+
             {/* Location */}
             <div className="bg-white rounded-2xl p-5 border border-gray-100">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Location</p>
@@ -569,14 +733,21 @@ export default function ListRentView() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Property Type</label>
-                  <select value={form.propertyType} onChange={setField('propertyType')} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-900 bg-white text-sm">
+                  <select
+                    value={form.propertyType}
+                    onChange={e => {
+                      const propertyType = e.target.value
+                      // Hotels and event venues are priced per night / per day and never sold
+                      setForm(prev => ({ ...prev, propertyType, listingType: rentUnit(propertyType) === 'month' ? prev.listingType : 'rent' }))
+                    }}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-900 bg-white text-sm">
                     <option value="">Select type</option>
-                    {['House (ቤት)','Apartment / Condominium','Studio','Villa','Townhouse','Commercial Space'].map(t => <option key={t}>{t}</option>)}
+                    {['House (ቤት)','Apartment / Condominium','Studio','Villa','Townhouse','Commercial Space','Hotel','Event Venue'].map(t => <option key={t}>{t}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    {isSale ? 'Sale Price (Br)' : 'Monthly Rent (Br)'}
+                    {isSale ? 'Sale Price (Br)' : `${RATE_LABEL[rentUnit(form.propertyType)]} (Br)`}
                   </label>
                   {isSale ? (
                     <input type="number" value={form.salePrice} onChange={setField('salePrice')} placeholder="e.g. 4500000" min={0} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-900 text-sm" />
@@ -638,12 +809,14 @@ export default function ListRentView() {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={uploadingCount > 0 || submitting}
+              disabled={uploadingCount > 0 || videoProgress !== null || submitting}
               className="w-full disabled:opacity-50 disabled:cursor-not-allowed bg-gray-900 hover:bg-gray-800 active:bg-black text-white py-4 rounded-2xl font-semibold transition-all flex items-center justify-center gap-2 mb-8"
             >
-              {(uploadingCount > 0 || submitting) && <Loader2 className="w-4 h-4 animate-spin" />}
+              {(uploadingCount > 0 || videoProgress !== null || submitting) && <Loader2 className="w-4 h-4 animate-spin" />}
               {uploadingCount > 0
                 ? `Uploading ${uploadingCount} photo…`
+                : videoProgress !== null
+                ? 'Uploading video…'
                 : submitting
                   ? 'Saving…'
                   : isEditing
@@ -720,7 +893,7 @@ export default function ListRentView() {
                                   )
                                 : d.monthlyRent != null && (
                                     <div className="text-white font-bold text-lg leading-tight">
-                                      {formatETB(d.monthlyRent)}<span className="text-white/70 text-xs font-normal">/mo</span>
+                                      {formatETB(d.monthlyRent)}<span className="text-white/70 text-xs font-normal">{RATE_SUFFIX[rentUnit(d.propertyType)]}</span>
                                     </div>
                                   )
                               }
@@ -775,7 +948,7 @@ export default function ListRentView() {
                               )
                             : d.monthlyRent != null && (
                                 <div className="text-xl font-bold text-gray-900 mb-2">
-                                  {formatETB(d.monthlyRent)}<span className="text-sm font-normal text-gray-500">/mo</span>
+                                  {formatETB(d.monthlyRent)}<span className="text-sm font-normal text-gray-500">{RATE_SUFFIX[rentUnit(d.propertyType)]}</span>
                                 </div>
                               )
                         )}

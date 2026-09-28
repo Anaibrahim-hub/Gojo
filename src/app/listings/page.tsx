@@ -1,19 +1,17 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
-import ListingsView from '../components/ListingsView'
+import ListingsGrid from '../components/ListingsGrid'
 
 export const metadata: Metadata = {
-  title: 'Property Listings in Ethiopia | Yevilla',
-  description: 'Browse homes, apartments, and commercial properties for sale and rent across Ethiopia. Filter by location, price, and type on Yevilla.',
+  title: 'Homes for rent and sale in Ethiopia | Gojo',
+  description: 'Browse apartments, villas, houses and commercial spaces for rent and sale across Ethiopia. Filter by city, price, bedrooms and type on Gojo.',
   alternates: { canonical: 'https://yevilla.com/listings' },
 }
 
 export default function ListingsPage() {
   return (
-    <div className="size-full flex flex-col" style={{ height: '100vh' }}>
-      <Suspense>
-        <ListingsView />
-      </Suspense>
-    </div>
+    <Suspense>
+      <ListingsGrid />
+    </Suspense>
   )
 }

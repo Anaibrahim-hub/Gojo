@@ -56,6 +56,7 @@ export interface Property {
   status: 'active' | 'pending' | 'new'
   image: string
   photos?: string[]       // multiple photos from a Firestore listing
+  video?: string          // optional walkthrough video URL (R2)
   lat: number | null
   lng: number | null
   type: 'sale' | 'rent' | 'both'
@@ -102,6 +103,7 @@ export function apiListingToProperty(d: Record<string, unknown>): Property {
     status: (d.status as string) === 'published' ? 'active' : 'pending',
     image: photos[0]?.url ?? 'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=800',
     photos: photos.map(p => p.url),
+    video: (d.video as { url?: string } | null | undefined)?.url || undefined,
     lat: (d.lat as number | null) ?? null,
     lng: (d.lng as number | null) ?? null,
     type: (d.listingType as 'rent' | 'sale') ?? 'rent',

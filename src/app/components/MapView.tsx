@@ -6,6 +6,7 @@ import Map, { Marker, Popup, NavigationControl, FullscreenControl } from 'react-
 import type { MapRef } from 'react-map-gl/mapbox'
 import type { Property } from '@/app/data/properties'
 import { formatETB, formatETBCompact } from '@/app/components/ui/utils'
+import { img as cdnImg } from '@/lib/image'
 
 interface MapViewProps {
   properties: Property[]
@@ -126,8 +127,10 @@ export default function MapView({ properties, onPropertyClick, hoveredPropertyId
             onClick={() => onPropertyClick(popupProperty)}
           >
             <img
-              src={popupProperty.image}
+              src={cdnImg(popupProperty.image, { width: 480 })}
               alt={popupProperty.address}
+              loading="lazy"
+              decoding="async"
               className="h-28 w-full object-cover"
             />
             <div className="p-2.5">

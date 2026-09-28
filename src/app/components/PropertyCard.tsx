@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Heart, ChevronLeft, ChevronRight, Share2, Check } from 'lucide-react';
 import { useFavorites } from '@/lib/favorites-context';
 import { formatETB } from '@/app/components/ui/utils';
+import { img } from '@/lib/image';
 
 function isNewListing(createdAt?: number): boolean {
   if (!createdAt) return false;
@@ -117,8 +118,10 @@ export default function PropertyCard({ property, onClick, isHovered, onMouseEnte
         onTouchEnd={onTouchEnd}
       >
         <img
-          src={images[currentImageIndex]}
+          src={img(images[currentImageIndex], { width: 640 })}
           alt={property.address}
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover transition-transform duration-500 lg:group-hover:scale-[1.04]"
         />
 

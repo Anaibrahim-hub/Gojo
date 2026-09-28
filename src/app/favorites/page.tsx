@@ -1,18 +1,12 @@
 import type { Metadata } from 'next'
-import { Suspense } from 'react'
-import FavoritesView from '@/app/components/FavoritesView'
+import FavoritesPage from '@/app/components/FavoritesPage'
 
 export const metadata: Metadata = {
+  title: 'Favorites | Gojo',
   robots: { index: false, follow: false },
   alternates: { canonical: 'https://yevilla.com/favorites' },
 }
 
-export default function FavoritesPage() {
-  return (
-    <div className="size-full flex flex-col" style={{ height: '100vh' }}>
-      <Suspense>
-        <FavoritesView />
-      </Suspense>
-    </div>
-  )
+export default function Favorites() {
+  return <FavoritesPage />
 }

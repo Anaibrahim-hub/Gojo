@@ -88,7 +88,7 @@ export default function ListingsView() {
   const [hoveredPropertyId, setHoveredPropertyId] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<'map' | 'list'>('list')
   const [listingMode, setListingMode] = useState<'buy' | 'rent'>(initialMode)
-  const [showAllTypes, setShowAllTypes] = useState(!modeParam)
+  const [showAllTypes, setShowAllTypes] = useState(false)
   const [sortBy, setSortBy] = useState<'recommended' | 'price-low' | 'price-high' | 'beds' | 'baths' | 'sqft'>('recommended')
   const [showSignInModal, setShowSignInModal] = useState(false)
   const { listings: apiListings, loading: loadingListings, hasMore, loadMore, loadingMore } = useListings()
@@ -104,6 +104,19 @@ export default function ListingsView() {
   // Mobile filter/sort UI
   const [showMobileFilter, setShowMobileFilter] = useState(false)
   const [mobileSortOpen, setMobileSortOpen] = useState(false)
+
+  // On mobile the list is the default view, but the map <div> is only CSS-hidden —
+  // so Mapbox GL (large JS + WebGL + tile fetches) would still download and init for
+  // every mobile visitor. Gate the actual MapView mount on desktop OR the user
+  // opening the map, so mobile users don't pay for Mapbox until they want it.
+  const [isDesktop, setIsDesktop] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const update = () => setIsDesktop(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
 
   useEffect(() => {
     if (showAllTypes) return
@@ -221,7 +234,7 @@ export default function ListingsView() {
   ]
 
   return (
-    <div className="size-full flex flex-col overflow-x-hidden">
+    <div className="size-full flex flex-col">
 
       {/* ── Desktop: FilterPanel ── */}
       <div className="hidden lg:block flex-shrink-0">
@@ -310,14 +323,16 @@ export default function ListingsView() {
 
         {/* Map */}
         <div className={`w-full lg:w-1/2 h-full ${mobileView === 'list' ? 'hidden lg:block' : ''}`}>
-          <MapView
-            properties={filteredProperties}
-            onPropertyClick={setSelectedProperty}
-            hoveredPropertyId={hoveredPropertyId}
-            onMarkerHover={setHoveredPropertyId}
-            listingMode={listingMode}
-            flyTo={mapFlyTo}
-          />
+          {(isDesktop || mobileView === 'map') && (
+            <MapView
+              properties={filteredProperties}
+              onPropertyClick={setSelectedProperty}
+              hoveredPropertyId={hoveredPropertyId}
+              onMarkerHover={setHoveredPropertyId}
+              listingMode={listingMode}
+              flyTo={mapFlyTo}
+            />
+          )}
         </div>
 
         {/* List */}

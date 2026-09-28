@@ -13,6 +13,7 @@ import { useListings } from '@/lib/listings-context';
 import { type Property, apiListingToProperty } from '@/app/data/properties';
 import SignInModal from './SignInModal';
 import { formatETBCompact, formatETB } from '@/app/components/ui/utils';
+import { img as cdnImg } from '@/lib/image';
 import { filterLocalPlaces } from '@/app/data/places';
 
 const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? '';
@@ -64,8 +65,10 @@ function PropertyCarouselCard({
     >
       <div className="relative h-carousel-img-sm lg:h-carousel-img-lg overflow-hidden rounded-2xl mb-3 shadow-sm group-hover:shadow-lg transition-all duration-300">
         <img
-          src={image}
+          src={cdnImg(image, { width: 640 })}
           alt={property.address}
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.05]"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/10 to-transparent" />
@@ -132,6 +135,18 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
   const [sharedId, setSharedId] = useState<number | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [heroIndex, setHeroIndex] = useState(0);
+
+  // The hero slideshow is `hidden lg:block` (desktop only), but display:none does
+  // NOT stop browsers downloading its up-to-8 full-size images — so every mobile
+  // visitor pays for images they never see. Only mount it on real desktop viewports.
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   const [agentLocation, setAgentLocation] = useState('');
   const [agentEmail, setAgentEmail] = useState('');
@@ -464,7 +479,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
         {/* Right: listing slideshow — hidden on mobile */}
         <div className="hidden lg:block relative flex-1 min-h-0 bg-gray-900 overflow-hidden">
           {/* Images */}
-          {heroListings.length === 0 ? (
+          {heroListings.length === 0 || !isDesktop ? (
             <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-gray-900" />
           ) : (
             heroListings.map((listing, i) => {
@@ -474,7 +489,7 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                   key={listing.id}
                   className={`absolute inset-0 transition-opacity duration-700 ${i === heroIndex ? 'opacity-100' : 'opacity-0'}`}
                 >
-                  <img src={img} alt={listing.address} className="w-full h-full object-cover" />
+                  <img src={cdnImg(img, { width: 1280 })} alt={listing.address} loading={i === 0 ? undefined : 'lazy'} decoding="async" className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black/10" />
                 </div>
               );
@@ -552,52 +567,52 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
       </div>
 
       {/* ── Talk to an Agent (desktop only) ── */}
-      <section ref={talkToAgentRef} className="hidden lg:block bg-[#1c1917] py-16 lg:py-24 px-4">
+      <section ref={talkToAgentRef} className="hidden lg:block bg-[#EEEEEE] py-16 lg:py-24 px-4">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-10 lg:mb-12">
-            <p className="text-blue-400 text-[11px] font-semibold uppercase tracking-[0.3em] mb-3">Expert Guidance</p>
-            <h2 className="text-3xl lg:text-5xl font-black text-white tracking-tight mb-4">Talk to an Agent</h2>
-            <p className="text-gray-400 text-base max-w-sm mx-auto leading-relaxed">
+            <p className="text-blue-600 text-[11px] font-semibold uppercase tracking-[0.3em] mb-3">Expert Guidance</p>
+            <h2 className="text-3xl lg:text-5xl font-black text-gray-900 tracking-tight mb-4">Talk to an Agent</h2>
+            <p className="text-gray-500 text-base max-w-sm mx-auto leading-relaxed">
               Our local experts are ready to help you navigate the market.
             </p>
           </div>
 
           {agentSubmitted ? (
             <div className="flex flex-col items-center py-10 gap-4 text-center">
-              <div className="w-16 h-16 rounded-full bg-blue-500/15 flex items-center justify-center">
-                <svg className="w-8 h-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center">
+                <svg className="w-8 h-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-xl font-bold text-white">Request submitted!</p>
-              <p className="text-gray-400 text-sm">An agent will reach out to you shortly.</p>
+              <p className="text-xl font-bold text-gray-900">Request submitted!</p>
+              <p className="text-gray-500 text-sm">An agent will reach out to you shortly.</p>
             </div>
           ) : (
             <form className="space-y-3.5" onSubmit={handleAgentFormSubmit}>
               <input
                 type="text" placeholder="Where are you searching? (City, Neighborhood)"
                 value={agentLocation} onChange={e => setAgentLocation(e.target.value)}
-                className="w-full px-4 py-3.5 bg-white/[0.05] border border-white/[0.1] rounded-xl text-white placeholder:text-white/30 focus:border-blue-500/60 focus:bg-white/[0.07] focus:outline-none transition-all text-sm"
+                className="w-full px-4 py-3.5 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none transition-all text-sm"
               />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 <input
                   type="email" placeholder="Email Address *"
                   value={agentEmail} onChange={e => setAgentEmail(e.target.value)}
-                  className="w-full px-4 py-3.5 bg-white/[0.05] border border-white/[0.1] rounded-xl text-white placeholder:text-white/30 focus:border-blue-500/60 focus:bg-white/[0.07] focus:outline-none transition-all text-sm"
+                  className="w-full px-4 py-3.5 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none transition-all text-sm"
                 />
                 <input
                   type="tel" placeholder="Phone Number"
                   value={agentPhone} onChange={e => setAgentPhone(e.target.value)}
-                  className="w-full px-4 py-3.5 bg-white/[0.05] border border-white/[0.1] rounded-xl text-white placeholder:text-white/30 focus:border-blue-500/60 focus:bg-white/[0.07] focus:outline-none transition-all text-sm"
+                  className="w-full px-4 py-3.5 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none transition-all text-sm"
                 />
               </div>
               <textarea
                 placeholder="Tell us about your real estate goals…"
                 rows={4}
                 value={agentMessage} onChange={e => setAgentMessage(e.target.value)}
-                className="w-full px-4 py-3.5 bg-white/[0.05] border border-white/[0.1] rounded-xl text-white placeholder:text-white/30 focus:border-blue-500/60 focus:bg-white/[0.07] focus:outline-none transition-all resize-none text-sm"
+                className="w-full px-4 py-3.5 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none transition-all resize-none text-sm"
               />
-              {agentError && <p className="text-sm text-red-400">{agentError}</p>}
+              {agentError && <p className="text-sm text-red-500">{agentError}</p>}
               <button
                 type="submit" disabled={agentSubmitting}
                 className="w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 disabled:opacity-50 text-white py-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2"
@@ -605,10 +620,10 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                 {agentSubmitting && <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>}
                 {agentSubmitting ? 'Submitting…' : 'Submit Request'}
               </button>
-              <p className="text-[11px] text-gray-600 text-center leading-relaxed">
+              <p className="text-[11px] text-gray-500 text-center leading-relaxed">
                 By submitting, you agree to our{' '}
-                <a href="/privacy" className="text-gray-400 hover:text-white transition-colors">Privacy Policy</a>{' '}and{' '}
-                <a href="/terms" className="text-gray-400 hover:text-white transition-colors">Terms of Use</a>.
+                <a href="/privacy" className="text-gray-600 hover:text-gray-900 transition-colors">Privacy Policy</a>{' '}and{' '}
+                <a href="/terms" className="text-gray-600 hover:text-gray-900 transition-colors">Terms of Use</a>.
               </p>
             </form>
           )}

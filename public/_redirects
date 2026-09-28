@@ -1,1 +1,8 @@
-https://www.yevilla.com/* https://yevilla.com/:splat 301
+# NOTE: www -> apex redirect is NOT handled here.
+# Cloudflare Pages _redirects only match on the request PATH, never the
+# hostname, so a rule like "https://www.yevilla.com/* ..." silently never
+# fires (www was being served as a 200 duplicate). The www -> yevilla.com
+# 301 is configured as a zone-level Single Redirect Rule in the Cloudflare
+# dashboard (Rules -> Redirect Rules):
+#   When:  http.host eq "www.yevilla.com"
+#   Then:  301 -> concat("https://yevilla.com", http.request.uri.path)

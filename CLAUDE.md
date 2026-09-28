@@ -59,7 +59,8 @@ All routes are on the `gojo-upload` worker. Auth uses Firebase JWT unless noted.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `POST` | `/upload` | Firebase JWT | Upload a photo to R2; returns `{ key, url }` |
-| `DELETE` | `/image/:key` | Firebase JWT | Delete own photo from R2 |
+| `POST` | `/upload-video` | Firebase JWT | Stream a listing video (raw body, `Content-Type` video/mp4\|quicktime\|webm, ≤ 50 MB) to R2; returns `{ key, url }` |
+| `DELETE` | `/image/:key` | Firebase JWT | Delete own photo or video from R2 |
 | `GET` | `/listings` | Public | All published listings |
 | `GET` | `/listing` | Firebase JWT | Caller's own listings + `isAgent` flag |
 | `POST` | `/listing` | Firebase JWT | Create/upsert a listing (agents auto-publish; users go pending) |
@@ -89,7 +90,7 @@ agents        -- (uid TEXT) Firebase UIDs with agent role
 contact_info  -- single row (id = 1) with phone, email, address, office_hours
 ```
 
-Key `listings` columns: `owner_id`, `listing_type` ('rent'|'sale'), `status` ('pending'|'published'|'rejected'), `amenities` (JSON array), `photos` (JSON array of `{url, key}`).
+Key `listings` columns: `owner_id`, `listing_type` ('rent'|'sale'), `status` ('pending'|'published'|'rejected'), `amenities` (JSON array), `photos` (JSON array of `{url, key}`), `video` (JSON `{url, key}` or NULL — migration 0013; only written when a POST /listing body includes `video`, so clients that omit it never clear it). `property_type` includes `Hotel` (rent is per night) and `Event Venue` (per day); the amount is stored in `monthly_rent`.
 
 ## Worker Environment Variables
 
@@ -103,6 +104,7 @@ Set in `worker/wrangler.toml` (plain vars) or via `wrangler secret put` (secrets
 | `R2_PUBLIC_URL` | Cloudflare secret | `https://pub-XXXX.r2.dev` |
 | `BREVO_API_KEY` | Cloudflare secret | Brevo transactional email API key |
 | `STAFF_EMAIL` | Cloudflare secret | recipient for form submissions (default: anaibrahim628@gmail.com) |
+| `TURNSTILE_SECRET` | Cloudflare secret | Cloudflare Turnstile secret key; verifies contact-form submissions |
 
 Bindings (set in `wrangler.toml`): `DB` (D1), `GOJO_LISTINGS` (R2), `RATE_LIMITER` (KV).
 
@@ -120,7 +122,10 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
 NEXT_PUBLIC_FIREBASE_APP_ID=
 NEXT_PUBLIC_WORKER_URL=          # https://gojo-upload.ana-ibrahim433.workers.dev
 NEXT_PUBLIC_R2_PUBLIC_URL=       # https://pub-XXXX.r2.dev
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=  # Cloudflare Turnstile public site key (contact-form anti-spam)
 ```
+
+**Contact-form anti-spam** (`/submit-form`): three layers — a per-IP rate limit (5/60s), a hidden `company` honeypot field (any value → silently dropped), and an unforgeable identity gate. The gate branches on the `Origin` header: browsers (always send `Origin`) must pass a Cloudflare **Turnstile** token; native app clients (Expo, no `Origin`) must present a valid **Firebase JWT**. A bot can neither fake an Origin past Turnstile nor omit it past the JWT check. The Expo app signs logged-out users in anonymously so every submission carries a JWT (requires the **Anonymous** provider enabled in Firebase Auth).
 
 ## Frontend Routes
 

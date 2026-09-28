@@ -13,6 +13,7 @@ export interface Env {
   FIREBASE_SERVICE_ACCOUNT_JSON: string  // set via: wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
   BREVO_API_KEY: string      // set via: wrangler secret put BREVO_API_KEY
   STAFF_EMAIL: string        // set via: wrangler secret put STAFF_EMAIL (default: anaibrahim628@gmail.com)
+  TURNSTILE_SECRET: string   // set via: wrangler secret put TURNSTILE_SECRET (Cloudflare Turnstile)
 }
 
 // ── Allowlists ────────────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ const ALLOWED_CITIES = new Set([
 const ALLOWED_PROPERTY_TYPES = new Set([
   'House (ቤት)', 'Apartment / Condominium', 'Studio',
   'Villa', 'Townhouse', 'Commercial Space',
+  'Hotel', 'Event Venue',
 ])
 
 const ALLOWED_AMENITIES = new Set([
@@ -49,6 +51,16 @@ const RATE_LIMITS = {
 } as const
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024
+
+// Walkthrough videos are streamed straight into R2 (never buffered in memory).
+// Cloudflare caps request bodies at 100 MB on Free/Pro plans.
+// MP4/MOV only: their duration can be read from the file's header boxes (below).
+const ALLOWED_VIDEO_MIME: Record<string, string> = {
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+}
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024
+const MAX_VIDEO_SECONDS = 60
 
 // ── DB row / body types ───────────────────────────────────────────────────────
 
@@ -77,7 +89,9 @@ interface ListingRow {
   description: string | null
   amenities: string
   photos: string
+  video: string | null
   status: string
+  agent_phone: string | null
   created_at: number
   updated_at: number
   view_count: number
@@ -106,6 +120,9 @@ interface ListingBody {
   description?: string
   amenities?: string[]
   photos?: { url: string; key: string }[]
+  /** Omitted = leave the listing's video unchanged (older clients); null = remove it. */
+  video?: { url: string; key: string } | null
+  agentPhone?: string | null
 }
 
 interface ReportRow {
@@ -131,7 +148,7 @@ export default {
       .bind(oneWeekAgo).run()
   },
 
-  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const origin = request.headers.get('Origin') ?? ''
 
     if (request.method === 'OPTIONS') {
@@ -141,6 +158,9 @@ export default {
     const { pathname } = new URL(request.url)
 
     try {
+      if (request.method === 'POST' && pathname === '/upload-video') {
+        return handleVideoUpload(request, env, origin)
+      }
       if (request.method === 'POST' && pathname === '/upload') {
         return await handleUpload(request, env, origin)
       }
@@ -148,7 +168,7 @@ export default {
         return await handleImageDelete(request, env, origin, pathname.slice(7))
       }
       if (pathname === '/listings' && request.method === 'GET') {
-        return await handleGetAllListings(request, env, origin)
+        return await handleGetAllListings(request, env, origin, ctx)
       }
       if (pathname === '/listing') {
         if (request.method === 'GET')    return await handleGetListing(request, env, origin)
@@ -156,7 +176,7 @@ export default {
         if (request.method === 'DELETE') return await handleDeleteListing(request, env, origin)
       }
       if (pathname === '/listing/view' && request.method === 'POST') {
-        return await handleIncrementView(request, env, origin)
+        return await handleIncrementView(request, env, origin, ctx)
       }
       if (pathname === '/favorites') {
         if (request.method === 'GET') return await handleGetFavorites(request, env, origin)
@@ -219,7 +239,7 @@ export default {
         return await handleAdminUpdateReport(request, env, origin, pathname)
       }
       if (pathname === '/legal' && request.method === 'GET') {
-        return await handleGetLegal(request, env, origin)
+        return await handleGetLegal(request, env, origin, ctx)
       }
       if (pathname === '/admin/legal') {
         if (request.method === 'GET') return await handleAdminGetLegal(request, env, origin)
@@ -248,9 +268,51 @@ async function isAgent(uid: string, env: Env): Promise<boolean> {
   return !!row
 }
 
+const AGENT_UIDS_KEY = 'agent_uids'
+
+// Agent membership changes rarely, but the public /listings endpoint needs it on
+// every request to set the `isAgent` flag. Cache the set in edge-local KV instead
+// of doing a full-table scan against the (single-region) D1 on each read. The key
+// is invalidated in handleAddAgent/handleRemoveAgent so promotions take effect at once.
+async function getAgentUids(env: Env): Promise<Set<string>> {
+  const cached = await env.RATE_LIMITER.get(AGENT_UIDS_KEY)
+  if (cached) {
+    try { return new Set(JSON.parse(cached) as string[]) } catch {}
+  }
+  const { results } = await env.DB.prepare('SELECT uid FROM agents').all<{ uid: string }>()
+  const uids = results.map(r => r.uid)
+  env.RATE_LIMITER.put(AGENT_UIDS_KEY, JSON.stringify(uids), { expirationTtl: 300 }).catch(() => {})
+  return new Set(uids)
+}
+
+// ── Edge cache helpers ────────────────────────────────────────────────────────
+// Cache public JSON payloads in the colo-local edge cache (caches.default), keyed
+// by an origin-independent URL so per-client CORS headers are never baked into the
+// stored entry. On a hit the worker still runs but skips the cross-continent D1
+// round-trip — the dominant latency for users far from the D1 primary region.
+
+function edgeCacheKey(name: string): Request {
+  return new Request(`https://edge-cache.yevilla.internal/${name}`)
+}
+
+async function edgeCacheMatch(key: Request): Promise<string | null> {
+  const hit = await caches.default.match(key)
+  return hit ? await hit.text() : null
+}
+
+function edgeCacheStore(ctx: ExecutionContext, key: Request, body: string, maxAgeSec: number): void {
+  const res = new Response(body, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': `public, max-age=${maxAgeSec}`,
+    },
+  })
+  ctx.waitUntil(caches.default.put(key, res))
+}
+
 // ── Listings: GET all (public) ────────────────────────────────────────────────
 
-async function handleGetAllListings(request: Request, env: Env, origin: string): Promise<Response> {
+async function handleGetAllListings(request: Request, env: Env, origin: string, ctx: ExecutionContext): Promise<Response> {
   const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
   if (!await rateLimit(env, `pub:${ip}`, RATE_LIMITS.read_pub)) {
     return jsonErr(429, 'Too many requests — please slow down', origin, env)
@@ -261,22 +323,28 @@ async function handleGetAllListings(request: Request, env: Env, origin: string):
   const limit = 100
   const offset = (page - 1) * limit
 
-  const [{ results }, agentsResult] = await Promise.all([
+  // Serve from the colo-local edge cache when warm — no D1 round-trip. CORS headers
+  // are rebuilt per request so every client (web, mobile-web, admin) gets correct ones.
+  const cacheKey = edgeCacheKey(`listings-p${page}`)
+  const cachedBody = await edgeCacheMatch(cacheKey)
+  if (cachedBody !== null) {
+    return jsonCached(cachedBody, origin, env)
+  }
+
+  const [{ results }, agentUids] = await Promise.all([
     env.DB.prepare('SELECT * FROM listings WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?')
       .bind('published', limit + 1, offset).all<ListingRow>(),
-    env.DB.prepare('SELECT uid FROM agents').all<{ uid: string }>(),
+    getAgentUids(env),
   ])
-  const agentUids = new Set(agentsResult.results.map(r => r.uid))
   const hasMore = results.length > limit
   const pageResults = hasMore ? results.slice(0, limit) : results
 
-  const h = corsHeaders(origin, env)
-  h.set('Content-Type', 'application/json')
-  h.set('Cache-Control', 'public, max-age=60, s-maxage=60, stale-while-revalidate=30')
-  return new Response(JSON.stringify({
+  const body = JSON.stringify({
     listings: pageResults.map(r => ({ ...rowToListing(r, true), isAgent: agentUids.has(r.owner_id) })),
     hasMore,
-  }), { status: 200, headers: h })
+  })
+  edgeCacheStore(ctx, cacheKey, body, 60)
+  return jsonCached(body, origin, env)
 }
 
 // ── Listing: GET own (authenticated) ─────────────────────────────────────────
@@ -347,6 +415,9 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
     ? body.listingId
     : null
 
+  // Id of a listing an agent creates in this request (set below)
+  let insertedId: string | null = null
+
   // Capture existing listing data before any edit so we can detect price drops
   let oldListingBeforeEdit: ReturnType<typeof rowToListing> | null = null
 
@@ -389,6 +460,7 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
         description        = ?,
         amenities          = ?,
         photos             = ?,
+        agent_phone        = ?,
         status             = ?,
         updated_at         = ?
       WHERE id = ? AND owner_id = ?
@@ -414,6 +486,7 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
       body.description ?? null,
       JSON.stringify(body.amenities ?? []),
       JSON.stringify(body.photos ?? []),
+      body.agentPhone ?? null,
       newStatus,
       now,
       listingId, uid,
@@ -421,6 +494,7 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
   } else if (agent) {
     // Agent create mode: always insert a new listing, auto-publish
     const newId = crypto.randomUUID()
+    insertedId = newId
     await env.DB.prepare(`
       INSERT INTO listings (
         id, owner_id, owner_email, owner_display_name, owner_photo_url,
@@ -428,7 +502,7 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
         lat, lng, property_type,
         listing_type, monthly_rent, sale_price,
         bedrooms, bathrooms, area_sqm, available_from,
-        description, amenities, photos,
+        description, amenities, photos, agent_phone,
         status, created_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, ?,
@@ -436,7 +510,7 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
         ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?,
+        ?, ?, ?, ?,
         'published', ?, ?
       )
     `).bind(
@@ -462,6 +536,7 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
       body.description ?? null,
       JSON.stringify(body.amenities ?? []),
       JSON.stringify(body.photos ?? []),
+      body.agentPhone ?? null,
       now, now,
     ).run()
   } else {
@@ -473,7 +548,7 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
         lat, lng, property_type,
         listing_type, monthly_rent, sale_price,
         bedrooms, bathrooms, area_sqm, available_from,
-        description, amenities, photos,
+        description, amenities, photos, agent_phone,
         status, created_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, ?,
@@ -481,7 +556,7 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
         ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?,
+        ?, ?, ?, ?,
         'pending', ?, ?
       )
       ON CONFLICT(id) DO UPDATE SET
@@ -506,6 +581,7 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
         description        = excluded.description,
         amenities          = excluded.amenities,
         photos             = excluded.photos,
+        agent_phone        = excluded.agent_phone,
         updated_at         = excluded.updated_at
     `).bind(
       uid, uid,
@@ -530,8 +606,31 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
       body.description ?? null,
       JSON.stringify(body.amenities ?? []),
       JSON.stringify(body.photos ?? []),
+      body.agentPhone ?? null,
       now, now,
     ).run()
+  }
+
+  // Video is only written when the client sends the field, so clients that don't
+  // know about videos (e.g. older mobile builds) never wipe an existing one.
+  if (body.video !== undefined) {
+    const videoTarget = listingId ?? insertedId ?? uid
+    const prev = await env.DB.prepare('SELECT video FROM listings WHERE id = ? AND owner_id = ?')
+      .bind(videoTarget, uid).first<{ video: string | null }>()
+    await env.DB.prepare('UPDATE listings SET video = ? WHERE id = ? AND owner_id = ?')
+      .bind(body.video ? JSON.stringify(body.video) : null, videoTarget, uid).run()
+    // Remove the replaced/removed video from R2
+    const prevKey = prev?.video ? safeParseJSON<{ key?: string } | null>(prev.video, null)?.key : undefined
+    if (prevKey && prevKey !== body.video?.key && prevKey.startsWith(`listings/${uid}/`)) {
+      await env.GOJO_LISTINGS.delete(prevKey).catch(() => {})
+    }
+  }
+
+  // Persist agent phone in agents table so all their listings have it without re-saving
+  if (agent && body.agentPhone) {
+    await env.DB.prepare(
+      'UPDATE agents SET phone = ? WHERE uid = ?'
+    ).bind(body.agentPhone, uid).run()
   }
 
   // Return the target listing
@@ -579,13 +678,12 @@ async function handleDeleteListing(request: Request, env: Env, origin: string): 
   const listingId = url.searchParams.get('id') ?? uid
 
   const row = await env.DB.prepare(
-    'SELECT id, photos FROM listings WHERE id = ? AND owner_id = ?'
-  ).bind(listingId, uid).first<Pick<ListingRow, 'id' | 'photos'>>()
+    'SELECT id, photos, video FROM listings WHERE id = ? AND owner_id = ?'
+  ).bind(listingId, uid).first<Pick<ListingRow, 'id' | 'photos' | 'video'>>()
 
   if (!row) return jsonErr(404, 'Listing not found', origin, env)
 
-  const photos = safeParseJSON<{ url: string; key: string }[]>(row.photos, [])
-  await Promise.allSettled(photos.map(p => env.GOJO_LISTINGS.delete(p.key)))
+  await Promise.allSettled(listingMediaKeys(row).map(k => env.GOJO_LISTINGS.delete(k)))
 
   await env.DB.prepare('DELETE FROM listings WHERE id = ? AND owner_id = ?')
     .bind(listingId, uid).run()
@@ -636,6 +734,223 @@ async function handleUpload(request: Request, env: Env, origin: string): Promise
   return json({ key, url: `${env.R2_PUBLIC_URL}/${key}` }, 200, origin, env)
 }
 
+// ── Video upload ──────────────────────────────────────────────────────────────
+// The raw file is the request body (Content-Type = the video's MIME type). It is
+// piped into R2 as it arrives, so large videos never sit in worker memory.
+
+async function handleVideoUpload(request: Request, env: Env, origin: string): Promise<Response> {
+  const uid = await authenticate(request, env)
+  if (!uid) return jsonErr(401, 'Unauthorized', origin, env)
+
+  if (!await rateLimit(env, `upload:${uid}`, RATE_LIMITS.upload)) {
+    return jsonErr(429, 'Upload limit reached — please wait a minute', origin, env)
+  }
+
+  const mime = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase()
+  const ext = ALLOWED_VIDEO_MIME[mime]
+  if (!ext) return jsonErr(400, 'Only MP4 and MOV videos are allowed', origin, env)
+
+  const size = Number(request.headers.get('Content-Length'))
+  if (!Number.isFinite(size) || size <= 0) return jsonErr(411, 'Content-Length required', origin, env)
+  if (size > MAX_VIDEO_SIZE) return jsonErr(413, 'Video exceeds 50 MB limit', origin, env)
+  if (!request.body) return jsonErr(400, 'Empty file', origin, env)
+
+  // Peek at the first bytes to confirm the file really is a video, then stream
+  // those bytes plus the rest of the body into R2.
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let peeked = 0
+  while (peeked < 12) {
+    const { value, done } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    peeked += value.byteLength
+  }
+  const head = new Uint8Array(Math.min(peeked, 12))
+  let offset = 0
+  for (const c of chunks) {
+    const take = Math.min(c.byteLength, head.length - offset)
+    head.set(c.subarray(0, take), offset)
+    offset += take
+    if (offset >= head.length) break
+  }
+  if (head.length < 12 || !isAllowedVideoMagic(head, mime)) {
+    reader.cancel().catch(() => {})
+    return jsonErr(400, 'File content does not match its declared type', origin, env)
+  }
+
+  const { readable, writable } = new FixedLengthStream(size)
+  const pump = (async () => {
+    const writer = writable.getWriter()
+    try {
+      for (const c of chunks) await writer.write(c)
+      for (;;) {
+        const { value, done } = await reader.read()
+        if (done) break
+        await writer.write(value)
+      }
+      await writer.close()
+    } catch (err) {
+      await writer.abort(err).catch(() => {})
+    }
+  })()
+
+  const key = `listings/${uid}/${crypto.randomUUID()}.${ext}`
+  try {
+    await Promise.all([
+      env.GOJO_LISTINGS.put(key, readable, {
+        httpMetadata: { contentType: mime },
+        customMetadata: { uploadedBy: uid },
+      }),
+      pump,
+    ])
+  } catch {
+    return jsonErr(400, 'Upload was interrupted — please try again', origin, env)
+  }
+
+  // Enforce the length limit from the file itself (the client checks too, but can't be trusted).
+  const seconds = await readMp4DurationSeconds(env.GOJO_LISTINGS, key, size).catch(() => null)
+  if (seconds === null || seconds > MAX_VIDEO_SECONDS + 0.5) {
+    await env.GOJO_LISTINGS.delete(key).catch(() => {})
+    return jsonErr(400, seconds === null
+      ? 'Could not read the video length — please upload an MP4 or MOV file'
+      : `Video must be ${MAX_VIDEO_SECONDS} seconds or shorter`, origin, env)
+  }
+
+  return json({ key, url: `${env.R2_PUBLIC_URL}/${key}` }, 200, origin, env)
+}
+
+/**
+ * Reads an MP4/MOV duration without downloading the whole file. Walks the
+ * top-level boxes with small ranged reads:
+ *  - regular files: `moov/mvhd` holds timescale + duration (moov may sit at the end);
+ *  - fragmented files (mvhd duration 0): sums each track's sample durations across
+ *    the `moof/traf/trun` fragments, using the track's `mdhd` timescale.
+ * Returns null when no duration can be determined.
+ */
+async function readMp4DurationSeconds(bucket: R2Bucket, key: string, fileSize: number): Promise<number | null> {
+  const read = async (offset: number, length: number): Promise<DataView | null> => {
+    const obj = await bucket.get(key, { range: { offset, length } })
+    if (!obj) return null
+    return new DataView(await obj.arrayBuffer())
+  }
+  const fourcc = (v: DataView, at: number) =>
+    String.fromCharCode(v.getUint8(at), v.getUint8(at + 1), v.getUint8(at + 2), v.getUint8(at + 3))
+
+  // Child boxes of a box whose payload spans [start, end) within `v`.
+  function* children(v: DataView, start: number, end: number) {
+    let p = start
+    while (p + 8 <= end) {
+      let size = v.getUint32(p)
+      let header = 8
+      if (size === 1) {
+        if (p + 16 > end) return
+        size = Number(v.getBigUint64(p + 8))
+        header = 16
+      } else if (size === 0) {
+        size = end - p
+      }
+      if (size < header || p + size > end) return
+      yield { type: fourcc(v, p + 4), body: p + header, end: p + size }
+      p += size
+    }
+  }
+  const find = (v: DataView, start: number, end: number, type: string) => {
+    for (const c of children(v, start, end)) if (c.type === type) return c
+    return null
+  }
+
+  const trackTimescale = new Map<number, number>()      // track_ID → mdhd timescale
+  const trackDefaultDuration = new Map<number, number>() // track_ID → trex default_sample_duration
+  const fragmentTicks = new Map<number, number>()        // track_ID → summed sample durations
+  let fragmented = false
+
+  let offset = 0
+  for (let i = 0; i < 1000 && offset + 8 <= fileSize; i++) {
+    const head = await read(offset, Math.min(16, fileSize - offset))
+    if (!head || head.byteLength < 8) return null
+    let boxSize = head.getUint32(0)
+    if (boxSize === 1) {
+      if (head.byteLength < 16) return null
+      boxSize = Number(head.getBigUint64(8))
+    } else if (boxSize === 0) {
+      boxSize = fileSize - offset
+    }
+    if (boxSize < 8) return null
+    const type = fourcc(head, 4)
+
+    if (type === 'moov' || type === 'moof') {
+      if (boxSize > 16 * 1024 * 1024) return null
+      const v = await read(offset, boxSize)
+      if (!v) return null
+      const top = children(v, 0, v.byteLength).next().value
+      if (!top) return null
+
+      if (type === 'moov') {
+        const mvhd = find(v, top.body, top.end, 'mvhd')
+        if (mvhd) {
+          const b = mvhd.body
+          const v1 = v.getUint8(b) === 1
+          const timescale = v.getUint32(b + (v1 ? 20 : 12))
+          const duration = v1 ? Number(v.getBigUint64(b + 24)) : v.getUint32(b + 16)
+          if (timescale && duration) return duration / timescale
+        }
+        for (const trak of children(v, top.body, top.end)) {
+          if (trak.type !== 'trak') continue
+          const tkhd = find(v, trak.body, trak.end, 'tkhd')
+          const mdia = find(v, trak.body, trak.end, 'mdia')
+          const mdhd = mdia && find(v, mdia.body, mdia.end, 'mdhd')
+          if (!tkhd || !mdhd) continue
+          const trackId = v.getUint32(tkhd.body + (v.getUint8(tkhd.body) === 1 ? 20 : 12))
+          trackTimescale.set(trackId, v.getUint32(mdhd.body + (v.getUint8(mdhd.body) === 1 ? 20 : 12)))
+        }
+        const mvex = find(v, top.body, top.end, 'mvex')
+        if (mvex) {
+          fragmented = true
+          for (const trex of children(v, mvex.body, mvex.end)) {
+            if (trex.type === 'trex') trackDefaultDuration.set(v.getUint32(trex.body + 4), v.getUint32(trex.body + 12))
+          }
+        }
+      } else {
+        fragmented = true
+        for (const traf of children(v, top.body, top.end)) {
+          if (traf.type !== 'traf') continue
+          const tfhd = find(v, traf.body, traf.end, 'tfhd')
+          if (!tfhd) continue
+          const tfFlags = v.getUint32(tfhd.body) & 0xffffff
+          const trackId = v.getUint32(tfhd.body + 4)
+          let q = tfhd.body + 8
+          if (tfFlags & 0x01) q += 8 // base_data_offset
+          if (tfFlags & 0x02) q += 4 // sample_description_index
+          const defaultDuration = tfFlags & 0x08 ? v.getUint32(q) : trackDefaultDuration.get(trackId) ?? 0
+          let ticks = 0
+          for (const trun of children(v, traf.body, traf.end)) {
+            if (trun.type !== 'trun') continue
+            const flags = v.getUint32(trun.body) & 0xffffff
+            const count = v.getUint32(trun.body + 4)
+            let r = trun.body + 8
+            if (flags & 0x01) r += 4 // data_offset
+            if (flags & 0x04) r += 4 // first_sample_flags
+            if (!(flags & 0x100)) { ticks += count * defaultDuration; continue }
+            const stride = 4 * [0x100, 0x200, 0x400, 0x800].filter(f => flags & f).length
+            for (let n = 0; n < count && r + 4 <= trun.end; n++, r += stride) ticks += v.getUint32(r)
+          }
+          fragmentTicks.set(trackId, (fragmentTicks.get(trackId) ?? 0) + ticks)
+        }
+      }
+    }
+    offset += boxSize
+  }
+
+  if (!fragmented) return null
+  let longest: number | null = null
+  for (const [trackId, ticks] of fragmentTicks) {
+    const timescale = trackTimescale.get(trackId)
+    if (timescale && ticks) longest = Math.max(longest ?? 0, ticks / timescale)
+  }
+  return longest
+}
+
 // ── Image delete ──────────────────────────────────────────────────────────────
 
 async function handleImageDelete(
@@ -667,7 +982,7 @@ async function handleImageDelete(
 
 // ── Listing: view increment (public) ─────────────────────────────────────────
 
-async function handleIncrementView(request: Request, env: Env, origin: string): Promise<Response> {
+async function handleIncrementView(request: Request, env: Env, origin: string, ctx: ExecutionContext): Promise<Response> {
   const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
   if (!await rateLimit(env, `view:${ip}`, RATE_LIMITS.read_pub)) {
     return jsonErr(429, 'Too many requests', origin, env)
@@ -684,9 +999,11 @@ async function handleIncrementView(request: Request, env: Env, origin: string): 
     return jsonErr(400, 'Invalid listingId', origin, env)
   }
 
-  await env.DB.prepare(
+  // Fire-and-forget: the view count is non-critical, so don't make the caller wait
+  // on a write round-trip to the D1 primary region.
+  ctx.waitUntil(env.DB.prepare(
     'UPDATE listings SET view_count = view_count + 1 WHERE id = ?'
-  ).bind(body.listingId).run()
+  ).bind(body.listingId).run())
 
   return json({ ok: true }, 200, origin, env)
 }
@@ -863,6 +1180,7 @@ async function handleAddAgent(request: Request, env: Env, origin: string): Promi
   await env.DB.prepare(
     'INSERT OR IGNORE INTO agents (uid) VALUES (?)'
   ).bind(body.uid).run()
+  env.RATE_LIMITER.delete(AGENT_UIDS_KEY).catch(() => {})
 
   return json({ uid: body.uid, role: 'agent' }, 200, origin, env)
 }
@@ -880,6 +1198,7 @@ async function handleRemoveAgent(request: Request, env: Env, origin: string): Pr
   }
 
   await env.DB.prepare('DELETE FROM agents WHERE uid = ?').bind(body.uid).run()
+  env.RATE_LIMITER.delete(AGENT_UIDS_KEY).catch(() => {})
   return json({ uid: body.uid, role: null }, 200, origin, env)
 }
 
@@ -917,13 +1236,12 @@ async function handleAdminDeleteListing(request: Request, env: Env, origin: stri
   }
 
   const row = await env.DB.prepare(
-    'SELECT id, photos FROM listings WHERE id = ?'
-  ).bind(body.id).first<Pick<ListingRow, 'id' | 'photos'>>()
+    'SELECT id, photos, video FROM listings WHERE id = ?'
+  ).bind(body.id).first<Pick<ListingRow, 'id' | 'photos' | 'video'>>()
 
   if (!row) return jsonErr(404, 'Listing not found', origin, env)
 
-  const photos = safeParseJSON<{ url: string; key: string }[]>(row.photos, [])
-  await Promise.allSettled(photos.map(p => env.GOJO_LISTINGS.delete(p.key)))
+  await Promise.allSettled(listingMediaKeys(row).map(k => env.GOJO_LISTINGS.delete(k)))
   await env.DB.prepare('DELETE FROM listings WHERE id = ?').bind(body.id).run()
 
   return json({ deleted: body.id }, 200, origin, env)
@@ -1301,20 +1619,17 @@ async function handleGetContact(request: Request, env: Env, origin: string): Pro
   }
 
   const cached = await env.RATE_LIMITER.get('contact_info')
-  if (cached) {
-    const h = corsHeaders(origin, env)
-    h.set('Content-Type', 'application/json')
-    return new Response(cached, { status: 200, headers: h })
-  }
+  if (cached) return jsonCached(cached, origin, env, 3600)
 
   const row = await env.DB.prepare(
     'SELECT phone, email, address, office_hours FROM contact_info WHERE id = 1'
   ).first<ContactRow>()
 
   const data = row ?? { phone: null, email: null, address: null, office_hours: null }
-  env.RATE_LIMITER.put('contact_info', JSON.stringify(data), { expirationTtl: 3600 }).catch(() => {})
+  const body = JSON.stringify(data)
+  env.RATE_LIMITER.put('contact_info', body, { expirationTtl: 3600 }).catch(() => {})
 
-  return json(data, 200, origin, env)
+  return jsonCached(body, origin, env, 3600)
 }
 
 // ── Firebase JWT verification ─────────────────────────────────────────────────
@@ -1389,14 +1704,59 @@ const FORM_SUBJECTS: Record<string, string> = {
   'become-agent':  'New Agent Application — Yevilla',
 }
 
+// Verify a Cloudflare Turnstile token against the siteverify API. Returns false
+// on any error so a failed verification can never fall through to "allowed".
+async function verifyTurnstile(token: string, ip: string, secret: string): Promise<boolean> {
+  if (!secret || !token) return false
+  try {
+    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret, response: token, remoteip: ip }),
+    })
+    if (!res.ok) return false
+    const data = (await res.json()) as { success?: boolean }
+    return data.success === true
+  } catch {
+    return false
+  }
+}
+
 async function handleSubmitForm(request: Request, env: Env, origin: string): Promise<Response> {
   const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
   if (!await rateLimit(env, `email:${ip}`, RATE_LIMITS.email)) {
     return jsonErr(429, 'Too many submissions — please slow down', origin, env)
   }
 
-  let body: { type?: unknown; fields?: unknown }
+  let body: { type?: unknown; fields?: unknown; token?: unknown; company?: unknown }
   try { body = await request.json() } catch { return jsonErr(400, 'Invalid JSON', origin, env) }
+
+  // Honeypot: the hidden "company" field is invisible to humans. Any value means
+  // a bot filled it in — silently accept so the bot can't detect the trap, but
+  // never send the email.
+  if (typeof body.company === 'string' && body.company.trim() !== '') {
+    return json({ ok: true }, 200, origin, env)
+  }
+
+  // Anti-bot gate. Browsers always send an Origin header → require a Cloudflare
+  // Turnstile token. Native app clients (Expo) send no Origin → require a valid
+  // Firebase JWT instead (unforgeable, signed by Google; the app uses an
+  // anonymous sign-in for logged-out users). Both branches are unspoofable: a bot
+  // can neither pass Turnstile by sending an Origin, nor pass the JWT check by
+  // omitting one.
+  if (request.headers.get('Origin')) {
+    const token = typeof body.token === 'string' ? body.token : ''
+    if (!await verifyTurnstile(token, ip, env.TURNSTILE_SECRET)) {
+      return jsonErr(403, 'Verification failed — please try again', origin, env)
+    }
+  } else {
+    const authz = request.headers.get('Authorization') ?? ''
+    const jwt = authz.startsWith('Bearer ') ? authz.slice(7) : ''
+    const uid = jwt ? await verifyFirebaseToken(jwt, env.FIREBASE_PROJECT_ID) : null
+    if (!uid) {
+      return jsonErr(403, 'Verification failed — please try again', origin, env)
+    }
+  }
 
   const type = typeof body.type === 'string' ? body.type : ''
   if (!FORM_SUBJECTS[type]) return jsonErr(400, 'Invalid form type', origin, env)
@@ -1551,6 +1911,9 @@ function validateBody(body: ListingBody, env: Env): string[] {
   if (body.listingType && body.listingType !== 'rent' && body.listingType !== 'sale') {
     errors.push('listingType must be "rent" or "sale"')
   }
+  if (body.listingType === 'sale' && (body.propertyType === 'Hotel' || body.propertyType === 'Event Venue')) {
+    errors.push('Hotels and event venues can only be listed for rent')
+  }
   if (body.availableFrom && !isValidISODate(body.availableFrom)) {
     errors.push('availableFrom must be a valid YYYY-MM-DD date')
   }
@@ -1589,7 +1952,27 @@ function validateBody(body: ListingBody, env: Env): string[] {
     }
   }
 
+  if (body.video != null) {
+    const v = body.video
+    if (typeof v?.url !== 'string' || typeof v?.key !== 'string') {
+      errors.push('video must have url and key fields')
+    } else if (!v.url.startsWith(`${env.R2_PUBLIC_URL}/listings/`) || v.url !== `${env.R2_PUBLIC_URL}/${v.key}`) {
+      errors.push('Invalid video URL — must be hosted in the Gojo R2 bucket')
+    } else if (v.key.includes('..') || v.key.includes('//') || !/\.(mp4|mov)$/.test(v.key)) {
+      errors.push('Invalid video key')
+    }
+  }
+
   return errors
+}
+
+// ── Video magic-byte check ────────────────────────────────────────────────────
+
+function isAllowedVideoMagic(b: Uint8Array, mime: string): boolean {
+  // MP4 / QuickTime: bytes 4–7 are the ASCII box type "ftyp"
+  const isIsoMedia = b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70
+  if (mime === 'video/mp4' || mime === 'video/quicktime') return isIsoMedia
+  return false
 }
 
 // ── Image magic-byte check ────────────────────────────────────────────────────
@@ -1617,7 +2000,14 @@ function safeParseJSON<T>(s: string, fallback: T): T {
   try { return JSON.parse(s) as T } catch { return fallback }
 }
 
-function rowToListing(row: ListingRow, includeEmail: boolean) {
+/** Every R2 object a listing owns (photos + optional video), for cleanup on delete. */
+function listingMediaKeys(row: Pick<ListingRow, 'photos' | 'video'>): string[] {
+  const photos = safeParseJSON<{ key?: string }[]>(row.photos, []).map(p => p.key)
+  const video = row.video ? safeParseJSON<{ key?: string } | null>(row.video, null)?.key : undefined
+  return [...photos, video].filter((k): k is string => typeof k === 'string' && k.length > 0)
+}
+
+function rowToListing(row: ListingRow & { agent_phone_from_agents?: string | null }, includeEmail: boolean) {
   return {
     id:               row.id,
     ownerId:          row.owner_id,
@@ -1642,6 +2032,8 @@ function rowToListing(row: ListingRow, includeEmail: boolean) {
     description:   row.description ?? '',
     amenities:     safeParseJSON<string[]>(row.amenities, []),
     photos:        safeParseJSON<{ url: string; key: string }[]>(row.photos, []),
+    video:         row.video ? safeParseJSON<{ url: string; key: string } | null>(row.video, null) : null,
+    agentPhone:    row.agent_phone ?? row.agent_phone_from_agents ?? undefined,
     status:        row.status,
     viewCount:     row.view_count ?? 0,
     createdAt:     row.created_at,
@@ -2072,7 +2464,7 @@ async function getLegalDoc(env: Env, platform: string, type: string): Promise<Le
 
 // ── Legal content: GET /legal (public) ───────────────────────────────────────
 
-async function handleGetLegal(request: Request, env: Env, origin: string): Promise<Response> {
+async function handleGetLegal(request: Request, env: Env, origin: string, ctx: ExecutionContext): Promise<Response> {
   const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
   if (!await rateLimit(env, `pub:${ip}`, RATE_LIMITS.read_pub)) {
     return jsonErr(429, 'Too many requests — please slow down', origin, env)
@@ -2089,11 +2481,16 @@ async function handleGetLegal(request: Request, env: Env, origin: string): Promi
     return jsonErr(400, 'type must be privacy or terms', origin, env)
   }
 
+  const cacheKey = edgeCacheKey(`legal-${platform}-${type}`)
+  const cachedBody = await edgeCacheMatch(cacheKey)
+  if (cachedBody !== null) {
+    return jsonCached(cachedBody, origin, env, 3600)
+  }
+
   const doc = await getLegalDoc(env, platform, type)
-  const h = corsHeaders(origin, env)
-  h.set('Content-Type', 'application/json')
-  h.set('Cache-Control', 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=300')
-  return new Response(JSON.stringify(doc), { status: 200, headers: h })
+  const body = JSON.stringify(doc)
+  edgeCacheStore(ctx, cacheKey, body, 3600)
+  return jsonCached(body, origin, env, 3600)
 }
 
 // ── Admin: GET /admin/legal ───────────────────────────────────────────────────
@@ -2170,27 +2567,39 @@ async function handleAdminPutLegal(request: Request, env: Env, origin: string): 
 
   const key = `legal:${platform}:${type}`
   await env.RATE_LIMITER.put(key, JSON.stringify(legalDoc))
+  caches.default.delete(edgeCacheKey(`legal-${platform}-${type}`)).catch(() => {})
 
   return json({ ok: true, platform, type }, 200, origin, env)
 }
 
 // ── App config ────────────────────────────────────────────────────────────────
 
+const APP_VERSION_KEY = 'app_version'
+
 async function handleGetAppVersion(request: Request, env: Env, origin: string): Promise<Response> {
   const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
   if (!await rateLimit(env, `pub:${ip}`, RATE_LIMITS.read_pub)) {
     return jsonErr(429, 'Too many requests', origin, env)
   }
+
+  // Hit by every mobile app launch; changes only on a release. Serve from KV
+  // (edge-local) and let clients cache for an hour to avoid a D1 round-trip per open.
+  // Invalidated in handleAdminPatchAppConfig.
+  const cached = await env.RATE_LIMITER.get(APP_VERSION_KEY)
+  if (cached) return jsonCached(cached, origin, env, 3600)
+
   const row = await env.DB.prepare(
     'SELECT min_ios_version, min_android_version, ios_store_url, android_store_url FROM app_config WHERE id = 1'
   ).first<{ min_ios_version: string; min_android_version: string; ios_store_url: string; android_store_url: string }>()
 
-  return json({
+  const body = JSON.stringify({
     minIosVersion:     row?.min_ios_version     ?? '0.0.0',
     minAndroidVersion: row?.min_android_version ?? '0.0.0',
     iosStoreUrl:       row?.ios_store_url       ?? '',
     androidStoreUrl:   row?.android_store_url   ?? '',
-  }, 200, origin, env)
+  })
+  env.RATE_LIMITER.put(APP_VERSION_KEY, body, { expirationTtl: 3600 }).catch(() => {})
+  return jsonCached(body, origin, env, 3600)
 }
 
 async function handleAdminGetAppConfig(request: Request, env: Env, origin: string): Promise<Response> {
@@ -2239,6 +2648,7 @@ async function handleAdminPatchAppConfig(request: Request, env: Env, origin: str
   await env.DB.prepare(
     'INSERT OR REPLACE INTO app_config (id, min_ios_version, min_android_version, ios_store_url, android_store_url, updated_at) VALUES (1, ?, ?, ?, ?, ?)'
   ).bind(minIos, minAndroid, iosUrl, androidUrl, now).run()
+  env.RATE_LIMITER.delete(APP_VERSION_KEY).catch(() => {})
 
   return json({ minIosVersion: minIos, minAndroidVersion: minAndroid, iosStoreUrl: iosUrl, androidStoreUrl: androidUrl, updatedAt: now }, 200, origin, env)
 }
@@ -2253,6 +2663,7 @@ function corsHeaders(origin: string, env: Env): Headers {
   h.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
   h.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Admin-Secret')
   h.set('Access-Control-Max-Age', '86400')
+  h.set('Vary', 'Origin')
   h.set('X-Content-Type-Options', 'nosniff')
   h.set('X-Frame-Options', 'DENY')
   h.set('Referrer-Policy', 'strict-origin-when-cross-origin')
@@ -2263,6 +2674,16 @@ function json(data: unknown, status: number, origin: string, env: Env): Response
   const h = corsHeaders(origin, env)
   h.set('Content-Type', 'application/json')
   return new Response(JSON.stringify(data), { status, headers: h })
+}
+
+// Return an already-serialized public JSON body with fresh CORS headers and a
+// short browser/edge Cache-Control. Used by endpoints backed by the edge cache so
+// the cached body stays CORS-agnostic and headers are correct for every client.
+function jsonCached(body: string, origin: string, env: Env, maxAgeSec = 60): Response {
+  const h = corsHeaders(origin, env)
+  h.set('Content-Type', 'application/json')
+  h.set('Cache-Control', `public, max-age=${maxAgeSec}, s-maxage=${maxAgeSec}, stale-while-revalidate=30`)
+  return new Response(body, { status: 200, headers: h })
 }
 
 function jsonErr(status: number, error: string, origin: string, env: Env): Response {

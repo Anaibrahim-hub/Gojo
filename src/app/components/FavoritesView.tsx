@@ -77,7 +77,7 @@ export default function FavoritesView() {
       </div>
 
       {/* ── Mobile header: Wishlists ── */}
-      <div className="lg:hidden bg-white px-2 pt-5 pb-3 flex items-center justify-between flex-shrink-0">
+      <div className="lg:hidden sticky top-0 z-50 bg-white px-2 pt-5 pb-3 flex items-center justify-between flex-shrink-0">
         <span className="text-[28px] font-extrabold text-[#222222]">Wishlists</span>
         <div className="flex bg-white border border-[#EBEBEB] rounded-full overflow-hidden">
           <button

@@ -1,10 +1,26 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Mail, Phone, MapPin, Clock, Loader2, CheckCircle } from 'lucide-react'
 
 const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ''
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: HTMLElement, opts: {
+        sitekey: string
+        callback?: (token: string) => void
+        'expired-callback'?: () => void
+        'error-callback'?: () => void
+      }) => string
+      reset: (id?: string) => void
+      remove: (id?: string) => void
+    }
+  }
+}
 
 interface ContactInfo {
   phone: string | null
@@ -25,6 +41,10 @@ export default function ContactView() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
+  const [token, setToken] = useState('')
+  const [company, setCompany] = useState('') // honeypot — stays empty for humans
+  const turnstileRef = useRef<HTMLDivElement>(null)
+  const widgetIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!WORKER_URL) { setLoading(false); return }
@@ -35,10 +55,51 @@ export default function ContactView() {
       .finally(() => setLoading(false))
   }, [])
 
+  // Load and render the Cloudflare Turnstile widget once.
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return
+    const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+
+    function renderWidget() {
+      if (!turnstileRef.current || !window.turnstile || widgetIdRef.current) return
+      widgetIdRef.current = window.turnstile.render(turnstileRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (t: string) => setToken(t),
+        'expired-callback': () => setToken(''),
+        'error-callback': () => setToken(''),
+      })
+    }
+
+    if (window.turnstile) {
+      renderWidget()
+    } else {
+      let script = document.querySelector<HTMLScriptElement>(`script[src="${SCRIPT_SRC}"]`)
+      if (!script) {
+        script = document.createElement('script')
+        script.src = SCRIPT_SRC
+        script.async = true
+        script.defer = true
+        document.head.appendChild(script)
+      }
+      script.addEventListener('load', renderWidget)
+    }
+
+    return () => {
+      if (widgetIdRef.current && window.turnstile) {
+        window.turnstile.remove(widgetIdRef.current)
+        widgetIdRef.current = null
+      }
+    }
+  }, [])
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim() || !email.trim() || !message.trim()) {
       setError('Please fill in Name, Email, and Message.')
+      return
+    }
+    if (TURNSTILE_SITE_KEY && !token) {
+      setError('Please complete the verification below.')
       return
     }
     setSubmitting(true)
@@ -50,12 +111,17 @@ export default function ContactView() {
         body: JSON.stringify({
           type: 'contact',
           fields: { Name: name, Email: email, Subject: subject, Message: message },
+          token,
+          company, // honeypot
         }),
       })
       if (!res.ok) throw new Error()
       setSubmitted(true)
     } catch {
       setError('Something went wrong. Please try again.')
+      // Turnstile tokens are single-use; reset so the user can retry.
+      if (widgetIdRef.current && window.turnstile) window.turnstile.reset(widgetIdRef.current)
+      setToken('')
     } finally {
       setSubmitting(false)
     }
@@ -141,6 +207,23 @@ export default function ContactView() {
                     className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
                   />
                 </div>
+
+                {/* Honeypot — invisible to humans; bots that fill it are dropped */}
+                <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, overflow: 'hidden' }}>
+                  <label>
+                    Company
+                    <input
+                      type="text"
+                      tabIndex={-1}
+                      autoComplete="off"
+                      value={company}
+                      onChange={e => setCompany(e.target.value)}
+                    />
+                  </label>
+                </div>
+
+                {/* Cloudflare Turnstile */}
+                {TURNSTILE_SITE_KEY && <div ref={turnstileRef} className="mb-4" />}
 
                 {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
 

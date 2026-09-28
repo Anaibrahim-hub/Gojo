@@ -89,7 +89,7 @@ export default function SignInModal({ open, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[2500] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-white rounded-2xl w-full max-w-sm mx-4 p-6 shadow-2xl">
         <button
@@ -101,7 +101,7 @@ export default function SignInModal({ open, onClose }: Props) {
 
         {view === 'options' && (
           <>
-            <h2 className="text-xl font-semibold text-gray-900 mb-1">Sign in to Yevilla</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-1">Sign in to Gojo</h2>
             <p className="text-sm text-gray-500 mb-6">Save searches, contact agents, and more.</p>
 
             {error && <p className="text-xs text-red-500 mb-3">{error}</p>}

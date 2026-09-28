@@ -1,12 +1,12 @@
 import type { Metadata } from 'next'
-import HomeClient from './components/HomeClient'
+import HomeView from './components/HomeView'
 
 export const metadata: Metadata = {
-  title: 'Yevilla — Find Homes for Sale & Rent in Ethiopia',
-  description: "Ethiopia's real estate marketplace. Browse homes for sale and rent in Addis Ababa and across Ethiopia. Connect with agents, list your property, and find your next home.",
+  title: 'Gojo — Find a verified home in Ethiopia',
+  description: 'Browse apartments, villas, houses and commercial spaces for rent and sale across Addis Ababa, Bahir Dar, Hawassa and beyond.',
   alternates: { canonical: 'https://yevilla.com/' },
 }
 
 export default function Home() {
-  return <HomeClient />
+  return <HomeView />
 }
