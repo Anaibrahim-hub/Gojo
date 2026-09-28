@@ -8,7 +8,7 @@ export default function Logo({ className }: { className?: string }) {
       aria-label="Gojo home"
       className={cn('shrink-0 text-2xl font-extrabold tracking-tight text-primary', className)}
     >
-      gojo
+      Gojo
     </Link>
   )
 }
