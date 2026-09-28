@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Suspense } from 'react'
+import { Suspense, useState } from 'react'
 import HeaderSearch from './HeaderSearch'
 import HeaderFilters from './HeaderFilters'
 import LanguageToggle from './LanguageToggle'
@@ -24,6 +24,8 @@ export default function SiteHeader({ showSearch = false }: { showSearch?: boolea
   const pathname = usePathname()
   const { user, loading, photoURL, displayName } = useAuth()
   const { promptSignIn } = useSignInPrompt()
+  // On phones an active search takes the whole row (language + filters hide)
+  const [searchActive, setSearchActive] = useState(false)
   return (
     <header
       className={cn(
@@ -34,13 +36,17 @@ export default function SiteHeader({ showSearch = false }: { showSearch?: boolea
       <div className="mx-auto max-w-7xl px-4 py-3 md:px-6 md:py-4">
         <div className="flex items-center gap-3 md:gap-8">
           <Logo className="hidden md:block" />
-          <LanguageToggle />
+          <div className={cn(searchActive && 'max-md:hidden')}>
+            <LanguageToggle />
+          </div>
 
           {showSearch && (
             <div className="flex min-w-0 flex-1 items-center gap-2 md:max-w-2xl">
               <Suspense fallback={<div className="h-12 flex-1 rounded-full border border-border" />}>
-                <HeaderSearch />
-                <HeaderFilters />
+                <HeaderSearch onActiveChange={setSearchActive} />
+                <div className={cn(searchActive && 'max-md:hidden')}>
+                  <HeaderFilters />
+                </div>
               </Suspense>
             </div>
           )}

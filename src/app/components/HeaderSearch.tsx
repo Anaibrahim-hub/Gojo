@@ -30,7 +30,14 @@ function saveRecent(value: string) {
  * Header search box. Clicking it shows suggestions right away (recent searches,
  * then popular places from real listings); typing narrows them as you go.
  */
-export default function HeaderSearch({ className }: { className?: string }) {
+export default function HeaderSearch({
+  className,
+  onActiveChange,
+}: {
+  className?: string
+  /** Called when the search opens/closes, so the header can make room for it on phones. */
+  onActiveChange?: (active: boolean) => void
+}) {
   const router = useRouter()
   const params = useSearchParams()
   const { listings } = useListings()
@@ -47,6 +54,13 @@ export default function HeaderSearch({ className }: { className?: string }) {
   const listId = useId()
 
   useEffect(() => { setQuery(currentPlace) }, [currentPlace])
+  useEffect(() => { onActiveChange?.(open) }, [open, onActiveChange])
+
+  const cancel = () => {
+    setOpen(false)
+    setQuery(currentPlace)
+    inputRef.current?.blur()
+  }
 
   // Close when clicking or tabbing outside
   useEffect(() => {
@@ -134,10 +148,10 @@ export default function HeaderSearch({ className }: { className?: string }) {
   const firstPlaceIndex = suggestions.findIndex(s => s.kind === 'place')
 
   return (
-    <div ref={wrapRef} className={cn('relative min-w-0 flex-1', className)}>
+    <div ref={wrapRef} className={cn('relative flex min-w-0 flex-1 items-center gap-2', className)}>
       <div
         className={cn(
-          'flex h-12 items-center rounded-full border bg-background pl-5 pr-1.5 shadow-sm transition-shadow',
+          'flex h-12 min-w-0 flex-1 items-center rounded-full border bg-background pl-5 pr-1.5 shadow-sm transition-shadow',
           open ? 'border-foreground/20 shadow-md' : 'border-border hover:shadow-md',
         )}
       >
@@ -162,7 +176,7 @@ export default function HeaderSearch({ className }: { className?: string }) {
             setTyped(true)
           }}
           onKeyDown={onKeyDown}
-          className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground outline-none placeholder:font-medium placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+          className="min-w-0 flex-1 bg-transparent text-base font-semibold text-foreground outline-none md:text-sm placeholder:font-medium placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
         />
         {query && (
           <button
@@ -183,6 +197,17 @@ export default function HeaderSearch({ className }: { className?: string }) {
           <Search className="h-4 w-4" />
         </button>
       </div>
+
+      {/* Phones: the search takes over the header row, so give an obvious way out */}
+      {open && (
+        <button
+          type="button"
+          onClick={cancel}
+          className="shrink-0 px-1 text-sm font-semibold text-foreground md:hidden"
+        >
+          Cancel
+        </button>
+      )}
 
       {showMenu && (
         <ul
