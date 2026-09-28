@@ -268,7 +268,7 @@ function PriceInput({
         placeholder={placeholder}
         onChange={e => onChange(e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0))}
         aria-label={`${label} price`}
-        className="mt-1 w-full bg-transparent text-sm font-semibold outline-none"
+        className="mt-1 w-full bg-transparent text-base font-semibold outline-none md:text-sm"
       />
     </label>
   )
