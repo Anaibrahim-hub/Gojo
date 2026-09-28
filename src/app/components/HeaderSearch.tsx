@@ -167,7 +167,7 @@ export default function HeaderSearch({
           autoComplete="off"
           enterKeyHint="search"
           value={query}
-          placeholder="Where to?"
+          placeholder="Anywhere in Ethiopia"
           onFocus={e => { openMenu(); e.currentTarget.select() }}
           onClick={() => { if (!open) openMenu() }}
           onChange={e => {
