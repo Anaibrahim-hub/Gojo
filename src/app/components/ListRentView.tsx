@@ -72,41 +72,64 @@ function xhrUpload(
   })
 }
 
-// Raw-body upload for videos: the worker streams the body straight into R2.
-function xhrUploadVideo(
-  url: string, file: File, token: string,
-  onProgress: (pct: number) => void
-): Promise<{ url: string; key: string }> {
+// PUTs the file straight to R2 through a presigned URL (no worker size cap).
+// The Content-Type must match what the URL was signed for.
+function xhrPut(url: string, file: File, contentType: string, onProgress: (pct: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('POST', url)
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-    xhr.setRequestHeader('Content-Type', file.type)
+    xhr.open('PUT', url)
+    xhr.setRequestHeader('Content-Type', contentType)
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 95))
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 90))
     }
-    xhr.onload = () => {
-      onProgress(100)
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try { resolve(JSON.parse(xhr.responseText)) }
-        catch { reject(new Error('Invalid response from server')) }
-      } else {
-        try { reject(new Error(JSON.parse(xhr.responseText).error || 'Upload failed')) }
-        catch { reject(new Error(`Upload failed (${xhr.status})`)) }
-      }
-    }
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`)))
     xhr.onerror = () => reject(new Error('Network error — check your connection'))
     xhr.ontimeout = () => reject(new Error('Upload timed out'))
-    xhr.timeout = 15 * 60 * 1000
+    xhr.timeout = 60 * 60 * 1000
     xhr.send(file)
   })
+}
+
+// 1) ask the worker for an upload URL, 2) upload to R2, 3) have the worker verify
+// the stored file (type + 60-second limit) before it can be attached to a listing.
+async function uploadVideo(
+  file: File, contentType: string, token: string,
+  onProgress: (pct: number) => void
+): Promise<{ url: string; key: string }> {
+  const call = async (path: string, body: unknown) => {
+    const res = await fetch(`${WORKER_URL}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json().catch(() => ({})) as { error?: string }
+    if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`)
+    return data
+  }
+  const { uploadUrl, key } = await call('/video/upload-url', { contentType, size: file.size }) as { uploadUrl: string; key: string }
+  await xhrPut(uploadUrl, file, contentType, onProgress)
+  onProgress(95)
+  const verified = await call('/video/complete', { key }) as { url: string; key: string }
+  onProgress(100)
+  return { url: verified.url, key: verified.key }
 }
 
 const RATE_LABEL = { month: 'Monthly Rent', night: 'Nightly Rate', day: 'Daily Rate' } as const
 const RATE_SUFFIX = { month: '/mo', night: '/night', day: '/day' } as const
 
-const VIDEO_TYPES = ['video/mp4', 'video/quicktime']
-const MAX_VIDEO_MB = 50
+// Formats the worker can verify. Some systems leave file.type empty (e.g. .mkv),
+// so fall back to the file extension.
+const VIDEO_TYPE_BY_EXT: Record<string, string> = {
+  mp4: 'video/mp4', mov: 'video/quicktime', m4v: 'video/x-m4v', '3gp': 'video/3gpp',
+  '3g2': 'video/3gpp2', webm: 'video/webm', mkv: 'video/x-matroska',
+}
+const VIDEO_TYPES = new Set(Object.values(VIDEO_TYPE_BY_EXT))
+function videoContentType(file: File): string | null {
+  if (VIDEO_TYPES.has(file.type)) return file.type
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+  return VIDEO_TYPE_BY_EXT[ext] ?? null
+}
+const MAX_VIDEO_MB = 500
 const MAX_VIDEO_SECONDS = 60
 
 // Reads a local video file's length (seconds) before uploading it.
@@ -279,9 +302,9 @@ export default function ListRentView() {
     if (form.areaSqm && (parseFloat(form.areaSqm) <= 0 || parseFloat(form.areaSqm) > 50_000)) return 'Area must be between 1 and 50,000 m².'
     if (form.description.length > 2000) return 'Description must be 2,000 characters or less.'
     if (form.landmark.length > 200) return 'Landmark must be 200 characters or less.'
-    if (!lat || !lng) return 'GPS coordinates are required. Use the "Use my location" button or enter them manually.'
-    if (parseFloat(lat) < -90 || parseFloat(lat) > 90) return 'Latitude must be between -90 and 90.'
-    if (parseFloat(lng) < -180 || parseFloat(lng) > 180) return 'Longitude must be between -180 and 180.'
+    if (!lat !== !lng) return 'Enter both latitude and longitude, or leave both empty.'
+    if (lat && (isNaN(parseFloat(lat)) || parseFloat(lat) < -90 || parseFloat(lat) > 90)) return 'Latitude must be between -90 and 90.'
+    if (lng && (isNaN(parseFloat(lng)) || parseFloat(lng) < -180 || parseFloat(lng) > 180)) return 'Longitude must be between -180 and 180.'
     if (images.filter(img => !img.uploading).length === 0) return 'Please upload at least one photo of your property.'
     return null
   }
@@ -452,9 +475,10 @@ export default function ListRentView() {
     if (!file) return
     if (!user) { setSignInOpen(true); return }
     if (!WORKER_URL) { setVideoError('Upload service not configured.'); return }
-    if (!VIDEO_TYPES.includes(file.type)) { setVideoError('Please choose an MP4 or MOV video.'); return }
+    const contentType = videoContentType(file)
+    if (!contentType) { setVideoError('Please choose a video file (MP4, MOV, 3GP, WebM, or MKV).'); return }
     if (file.size > MAX_VIDEO_MB * 1024 * 1024) {
-      setVideoError(`Video is ${Math.ceil(file.size / 1024 / 1024)} MB — the limit is ${MAX_VIDEO_MB} MB. Try a shorter clip or record in 720p.`)
+      setVideoError(`Video is ${Math.ceil(file.size / 1024 / 1024)} MB — the limit is ${MAX_VIDEO_MB} MB.`)
       return
     }
     const seconds = await readVideoDuration(file).catch(() => null)
@@ -466,7 +490,7 @@ export default function ListRentView() {
     setVideoProgress(0)
     try {
       const token = await user.getIdToken()
-      const uploaded = await xhrUploadVideo(`${WORKER_URL}/upload-video`, file, token, setVideoProgress)
+      const uploaded = await uploadVideo(file, contentType, token, setVideoProgress)
       discardUnsavedVideo()
       setVideo(uploaded)
     } catch (err) {
@@ -548,28 +572,6 @@ export default function ListRentView() {
         <div className="flex-1 overflow-y-auto bg-gray-50 px-4 py-6 lg:px-6">
           <div className="max-w-2xl mx-auto space-y-4">
 
-            {/* Listing type toggle — agents only see For Sale */}
-            {isAgent && (
-              <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
-                {(['rent', 'sale'] as const).map(type => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setForm(prev => ({ ...prev, listingType: type }))}
-                    disabled={type === 'sale' && rentUnit(form.propertyType) !== 'month'}
-                    title={type === 'sale' && rentUnit(form.propertyType) !== 'month' ? 'Hotels and event venues are listed for rent only' : undefined}
-                    className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-                      form.listingType === type
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    } disabled:opacity-40 disabled:cursor-not-allowed`}
-                  >
-                    {type === 'rent' ? 'For Rent' : 'For Sale'}
-                  </button>
-                ))}
-              </div>
-            )}
-
             {/* Photos */}
             <div className="bg-white rounded-2xl p-5 border border-gray-100">
               <div className="flex items-center justify-between mb-4">
@@ -640,7 +642,7 @@ export default function ListRentView() {
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Video Tour <span className="font-medium normal-case tracking-normal">(optional)</span></p>
               </div>
-              <p className="text-sm text-gray-500 mb-4">A short walkthrough plays first when people open your listing. Up to {MAX_VIDEO_SECONDS} seconds, MP4 or MOV, max {MAX_VIDEO_MB} MB.</p>
+              <p className="text-sm text-gray-500 mb-4">A short walkthrough plays first when people open your listing. Any video up to {MAX_VIDEO_SECONDS} seconds long.</p>
 
               {videoError && (
                 <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 mb-4">
@@ -672,8 +674,8 @@ export default function ListRentView() {
                 <label className="flex flex-col items-center justify-center w-full h-36 border border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-gray-500 hover:bg-gray-50 transition-all">
                   <Video className="w-8 h-8 text-gray-400 mb-2" />
                   <p className="text-sm text-gray-600 font-medium">Click to upload a video</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Up to {MAX_VIDEO_SECONDS} seconds · MP4 or MOV · max {MAX_VIDEO_MB} MB</p>
-                  <input type="file" accept="video/mp4,video/quicktime" className="hidden" onChange={handleVideoUpload} />
+                  <p className="text-xs text-gray-400 mt-0.5">Up to {MAX_VIDEO_SECONDS} seconds</p>
+                  <input type="file" accept="video/*,.mkv,.3gp" className="hidden" onChange={handleVideoUpload} />
                 </label>
               ) : (
                 <button type="button" onClick={() => setSignInOpen(true)}
@@ -714,15 +716,15 @@ export default function ListRentView() {
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-sm font-medium text-gray-700">GPS Coordinates <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium text-gray-700">GPS Coordinates <span className="font-normal text-gray-400">(optional)</span></label>
                   <button type="button" onClick={detectLocation} disabled={locating} className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50 transition-all">
                     {locating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
                     {locating ? 'Detecting…' : 'Use my location'}
                   </button>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <input type="text" value={lat} onChange={e => setLat(e.target.value)} placeholder="Latitude  e.g. 9.005401" className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:border-gray-900 text-sm font-mono ${!lat && submitError ? 'border-red-400' : 'border-gray-200'}`} />
-                  <input type="text" value={lng} onChange={e => setLng(e.target.value)} placeholder="Longitude  e.g. 38.763611" className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:border-gray-900 text-sm font-mono ${!lng && submitError ? 'border-red-400' : 'border-gray-200'}`} />
+                  <input type="text" value={lat} onChange={e => setLat(e.target.value)} placeholder="Latitude  e.g. 9.005401" className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-900 text-sm font-mono" />
+                  <input type="text" value={lng} onChange={e => setLng(e.target.value)} placeholder="Longitude  e.g. 38.763611" className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-900 text-sm font-mono" />
                 </div>
               </div>
             </div>

@@ -25,6 +25,7 @@ export default function VideoPlayer({
   active = true,
   autoPlay = false,
   controlsPosition = 'bottom',
+  hideControlsOnMobile = false,
   className,
   children,
 }: {
@@ -36,8 +37,13 @@ export default function VideoPlayer({
   active?: boolean
   /** Start playing (muted, as browsers require) whenever it becomes active. */
   autoPlay?: boolean
-  /** Where the control bar sits: 'bottom', or 'top' when the bottom is taken by other overlays. */
-  controlsPosition?: 'bottom' | 'top'
+  /**
+   * Where the control bar sits: 'bottom' (inside a gallery slide) or 'screen-bottom'
+   * (a full-screen page: pinned to the bottom edge, clear of the phone's home bar).
+   */
+  controlsPosition?: 'bottom' | 'screen-bottom'
+  /** Phones get tap-to-play only (for a vertical swipe feed); desktop keeps the bar. */
+  hideControlsOnMobile?: boolean
   className?: string
   children?: React.ReactNode
 }) {
@@ -139,6 +145,7 @@ export default function VideoPlayer({
         src={src}
         poster={poster ? img(poster, { width: 1080 }) : undefined}
         muted={muted}
+        loop={autoPlay /* feed videos repeat; the listing player stops at the end */}
         playsInline
         preload="metadata"
         aria-label={title}
@@ -167,11 +174,15 @@ export default function VideoPlayer({
       {/* Control bar */}
       <div
         className={cn(
+          hideControlsOnMobile && 'max-md:hidden',
           'absolute inset-x-3 z-10 flex items-center gap-2 rounded-2xl bg-foreground/55 px-3 py-2 text-background backdrop-blur transition-opacity',
-          controlsPosition === 'top' ? 'top-[calc(env(safe-area-inset-top)+4.5rem)]' : 'bottom-8',
+          controlsPosition === 'screen-bottom' ? 'bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] md:inset-x-10 md:bottom-6' : 'bottom-8',
           fullscreen && 'bottom-6 top-auto',
           // Stay visible while paused / before first play; fade during playback until hovered.
-          playing && started ? 'opacity-100 md:opacity-0 md:group-hover/video:opacity-100 md:focus-within:opacity-100' : 'opacity-100',
+          // (a full-screen page keeps them visible so they're easy to find)
+          playing && started && controlsPosition !== 'screen-bottom'
+            ? 'opacity-100 md:opacity-0 md:group-hover/video:opacity-100 md:focus-within:opacity-100'
+            : 'opacity-100',
         )}
       >
         <ControlButton label={playing ? 'Pause' : 'Play'} onClick={toggle}>

@@ -131,10 +131,13 @@ export default function ReelsView() {
               title={`Video tour of ${listingTitle(l)}`}
               active={active}
               autoPlay
-              controlsPosition="top"
+              controlsPosition="screen-bottom"
+              hideControlsOnMobile
               className="absolute inset-0"
             >
-              <div className="absolute bottom-32 right-4 z-20 flex flex-col items-center gap-5 text-background md:bottom-10 md:right-24">
+              {/* Shade behind the listing info so white text stays readable on bright video */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-1/2 bg-gradient-to-t from-black/75 via-black/30 to-transparent" />
+              <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+8rem)] right-4 z-20 flex flex-col items-center gap-5 text-background md:bottom-28 md:right-24">
                 <button type="button" aria-label={saved ? 'Remove from favorites' : 'Save'} aria-pressed={saved} onClick={() => toggleFavorite(l.id)} className="flex flex-col items-center gap-1">
                   <span className="flex h-11 w-11 items-center justify-center rounded-full bg-background/15 backdrop-blur">
                     <Heart className={`h-5 w-5 ${saved ? 'fill-primary text-primary' : ''}`} />
@@ -154,7 +157,7 @@ export default function ReelsView() {
                 type="button"
                 onClick={() => openListing(l)}
                 aria-label={`Open listing: ${listingTitle(l)}`}
-                className="group absolute inset-x-0 bottom-0 z-10 block p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pr-20 text-left text-background md:px-10 md:pb-10"
+                className="group absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] z-10 block px-5 pr-20 text-left text-background md:bottom-20 md:px-10"
               >
                 <div className="max-w-2xl">
                   <h2 className="text-xl font-bold leading-tight first-letter:uppercase md:text-3xl">{listingTitle(l)}</h2>

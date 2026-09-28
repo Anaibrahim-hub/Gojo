@@ -2,9 +2,14 @@
   "rules": [
     {
       "allowed": {
-        "origins": ["https://www.gojo.com.et", "http://localhost:3000"],
-        "methods": ["GET", "HEAD"],
-        "headers": ["*"]
+        "origins": [
+          "https://yevilla.com",
+          "https://www.yevilla.com",
+          "http://localhost:3000",
+          "http://localhost:3001"
+        ],
+        "methods": ["GET", "HEAD", "PUT"],
+        "headers": ["Content-Type"]
       },
       "maxAgeSeconds": 86400
     }

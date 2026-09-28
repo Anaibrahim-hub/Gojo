@@ -59,7 +59,8 @@ All routes are on the `gojo-upload` worker. Auth uses Firebase JWT unless noted.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `POST` | `/upload` | Firebase JWT | Upload a photo to R2; returns `{ key, url }` |
-| `POST` | `/upload-video` | Firebase JWT | Stream a listing video (raw body, `Content-Type` video/mp4\|quicktime\|webm, ≤ 50 MB) to R2; returns `{ key, url }` |
+| `POST` | `/video/upload-url` | Firebase JWT | Presigned R2 PUT URL for a listing video (`{ contentType, size }`; MP4/MOV/M4V/3GP/WebM/MKV, ≤ 500 MB); returns `{ uploadUrl, key }` |
+| `POST` | `/video/complete` | Firebase JWT | Verify an uploaded video (signature + ≤ 60 s, parsed from the file); failures are deleted, successes can be attached to a listing for 7 days |
 | `DELETE` | `/image/:key` | Firebase JWT | Delete own photo or video from R2 |
 | `GET` | `/listings` | Public | All published listings |
 | `GET` | `/listing` | Firebase JWT | Caller's own listings + `isAgent` flag |
@@ -105,6 +106,8 @@ Set in `worker/wrangler.toml` (plain vars) or via `wrangler secret put` (secrets
 | `BREVO_API_KEY` | Cloudflare secret | Brevo transactional email API key |
 | `STAFF_EMAIL` | Cloudflare secret | recipient for form submissions (default: anaibrahim628@gmail.com) |
 | `TURNSTILE_SECRET` | Cloudflare secret | Cloudflare Turnstile secret key; verifies contact-form submissions |
+| `R2_ACCOUNT_ID`, `R2_BUCKET_NAME` | `wrangler.toml` [vars] | Target of presigned video uploads |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Cloudflare secret | R2 API token (Object Read & Write on `gojo-listings`) used to sign video upload URLs |
 
 Bindings (set in `wrangler.toml`): `DB` (D1), `GOJO_LISTINGS` (R2), `RATE_LIMITER` (KV).
 

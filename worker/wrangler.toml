@@ -33,5 +33,9 @@ crons = ["0 3 * * *"]  # 3 AM UTC daily — purge expired notifications
 [vars]
 FIREBASE_PROJECT_ID = "gojo-9e529"
 ALLOWED_ORIGIN = "https://yevilla.com"
+# Direct-to-R2 video uploads (presigned URLs). Access keys are secrets:
+#   wrangler secret put R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY
+R2_ACCOUNT_ID = "1cb9662bf309e7ed6daa4f93da033130"
+R2_BUCKET_NAME = "gojo-listings"
 # R2_PUBLIC_URL: set via `wrangler secret put R2_PUBLIC_URL` or in the CF dashboard
 # Format: https://pub-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.r2.dev

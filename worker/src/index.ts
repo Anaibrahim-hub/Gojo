@@ -14,6 +14,10 @@ export interface Env {
   BREVO_API_KEY: string      // set via: wrangler secret put BREVO_API_KEY
   STAFF_EMAIL: string        // set via: wrangler secret put STAFF_EMAIL (default: anaibrahim628@gmail.com)
   TURNSTILE_SECRET: string   // set via: wrangler secret put TURNSTILE_SECRET (Cloudflare Turnstile)
+  R2_ACCOUNT_ID: string      // wrangler.toml [vars] — account that owns the bucket
+  R2_BUCKET_NAME: string     // wrangler.toml [vars] — bucket behind GOJO_LISTINGS
+  R2_ACCESS_KEY_ID: string   // set via: wrangler secret put R2_ACCESS_KEY_ID (R2 API token, Object Read & Write)
+  R2_SECRET_ACCESS_KEY: string // set via: wrangler secret put R2_SECRET_ACCESS_KEY
 }
 
 // ── Allowlists ────────────────────────────────────────────────────────────────
@@ -52,15 +56,25 @@ const RATE_LIMITS = {
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024
 
-// Walkthrough videos are streamed straight into R2 (never buffered in memory).
-// Cloudflare caps request bodies at 100 MB on Free/Pro plans.
-// MP4/MOV only: their duration can be read from the file's header boxes (below).
-const ALLOWED_VIDEO_MIME: Record<string, string> = {
-  'video/mp4': 'mp4',
-  'video/quicktime': 'mov',
+// Walkthrough videos upload straight from the browser to R2 through a short-lived
+// presigned URL (so they aren't limited by the worker's 100 MB request cap). The
+// worker then verifies the stored file (type + length) before it can be attached
+// to a listing. `family` picks the container parser used to read the duration.
+type VideoFamily = 'iso' | 'matroska'
+const ALLOWED_VIDEO_TYPES: Record<string, { ext: string; family: VideoFamily }> = {
+  'video/mp4':        { ext: 'mp4',  family: 'iso' },
+  'video/quicktime':  { ext: 'mov',  family: 'iso' },
+  'video/x-m4v':      { ext: 'm4v',  family: 'iso' },
+  'video/3gpp':       { ext: '3gp',  family: 'iso' },
+  'video/3gpp2':      { ext: '3g2',  family: 'iso' },
+  'video/webm':       { ext: 'webm', family: 'matroska' },
+  'video/x-matroska': { ext: 'mkv',  family: 'matroska' },
 }
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024
+const VIDEO_KEY_EXT = /\.(mp4|mov|m4v|3gp|3g2|webm|mkv)$/
+const MAX_VIDEO_SIZE = 500 * 1024 * 1024        // a 60 s 4K phone clip is ~170–400 MB
 const MAX_VIDEO_SECONDS = 60
+const VIDEO_UPLOAD_URL_TTL = 15 * 60            // presigned PUT lifetime (seconds)
+const VIDEO_VERIFIED_TTL = 7 * 24 * 60 * 60     // how long a verified upload can be attached
 
 // ── DB row / body types ───────────────────────────────────────────────────────
 
@@ -158,8 +172,11 @@ export default {
     const { pathname } = new URL(request.url)
 
     try {
-      if (request.method === 'POST' && pathname === '/upload-video') {
-        return handleVideoUpload(request, env, origin)
+      if (request.method === 'POST' && pathname === '/video/upload-url') {
+        return handleVideoUploadUrl(request, env, origin)
+      }
+      if (request.method === 'POST' && pathname === '/video/complete') {
+        return handleVideoComplete(request, env, origin)
       }
       if (request.method === 'POST' && pathname === '/upload') {
         return await handleUpload(request, env, origin)
@@ -414,6 +431,21 @@ async function handleUpsertListing(request: Request, env: Env, origin: string): 
   const listingId = typeof body.listingId === 'string' && body.listingId.length > 0
     ? body.listingId
     : null
+
+  // A video can only be attached once /video/complete has verified it (or if it's
+  // already this listing's video) — so a client can't skip the length check.
+  if (body.video) {
+    if (!body.video.key.startsWith(`listings/${uid}/`)) return jsonErr(403, 'Forbidden', origin, env)
+    const existingId = listingId ?? (agent ? null : uid)
+    const current = existingId
+      ? await env.DB.prepare('SELECT video FROM listings WHERE id = ? AND owner_id = ?')
+          .bind(existingId, uid).first<{ video: string | null }>()
+      : null
+    const currentKey = current?.video ? safeParseJSON<{ key?: string } | null>(current.video, null)?.key : undefined
+    if (body.video.key !== currentKey && !(await env.RATE_LIMITER.get(`video-verified:${body.video.key}`))) {
+      return jsonErr(400, 'That video has not been verified — please upload it again', origin, env)
+    }
+  }
 
   // Id of a listing an agent creates in this request (set below)
   let insertedId: string | null = null
@@ -734,90 +766,253 @@ async function handleUpload(request: Request, env: Env, origin: string): Promise
   return json({ key, url: `${env.R2_PUBLIC_URL}/${key}` }, 200, origin, env)
 }
 
-// ── Video upload ──────────────────────────────────────────────────────────────
-// The raw file is the request body (Content-Type = the video's MIME type). It is
-// piped into R2 as it arrives, so large videos never sit in worker memory.
+// ── Video upload (direct to R2) ───────────────────────────────────────────────
+// 1. POST /video/upload-url  → presigned PUT URL for listings/<uid>/<uuid>.<ext>,
+//    locked to the declared content type and exact byte size.
+// 2. The browser PUTs the file straight to R2.
+// 3. POST /video/complete    → the worker checks the stored file's signature and
+//    length; failures are deleted, successes are marked verified for attaching.
 
-async function handleVideoUpload(request: Request, env: Env, origin: string): Promise<Response> {
+async function handleVideoUploadUrl(request: Request, env: Env, origin: string): Promise<Response> {
   const uid = await authenticate(request, env)
   if (!uid) return jsonErr(401, 'Unauthorized', origin, env)
 
   if (!await rateLimit(env, `upload:${uid}`, RATE_LIMITS.upload)) {
     return jsonErr(429, 'Upload limit reached — please wait a minute', origin, env)
   }
-
-  const mime = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase()
-  const ext = ALLOWED_VIDEO_MIME[mime]
-  if (!ext) return jsonErr(400, 'Only MP4 and MOV videos are allowed', origin, env)
-
-  const size = Number(request.headers.get('Content-Length'))
-  if (!Number.isFinite(size) || size <= 0) return jsonErr(411, 'Content-Length required', origin, env)
-  if (size > MAX_VIDEO_SIZE) return jsonErr(413, 'Video exceeds 50 MB limit', origin, env)
-  if (!request.body) return jsonErr(400, 'Empty file', origin, env)
-
-  // Peek at the first bytes to confirm the file really is a video, then stream
-  // those bytes plus the rest of the body into R2.
-  const reader = request.body.getReader()
-  const chunks: Uint8Array[] = []
-  let peeked = 0
-  while (peeked < 12) {
-    const { value, done } = await reader.read()
-    if (done) break
-    chunks.push(value)
-    peeked += value.byteLength
-  }
-  const head = new Uint8Array(Math.min(peeked, 12))
-  let offset = 0
-  for (const c of chunks) {
-    const take = Math.min(c.byteLength, head.length - offset)
-    head.set(c.subarray(0, take), offset)
-    offset += take
-    if (offset >= head.length) break
-  }
-  if (head.length < 12 || !isAllowedVideoMagic(head, mime)) {
-    reader.cancel().catch(() => {})
-    return jsonErr(400, 'File content does not match its declared type', origin, env)
+  if (!env.R2_ACCOUNT_ID || !env.R2_BUCKET_NAME || !env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY) {
+    return jsonErr(503, 'Video uploads are not configured yet', origin, env)
   }
 
-  const { readable, writable } = new FixedLengthStream(size)
-  const pump = (async () => {
-    const writer = writable.getWriter()
-    try {
-      for (const c of chunks) await writer.write(c)
-      for (;;) {
-        const { value, done } = await reader.read()
-        if (done) break
-        await writer.write(value)
-      }
-      await writer.close()
-    } catch (err) {
-      await writer.abort(err).catch(() => {})
-    }
-  })()
+  let body: { contentType?: unknown; size?: unknown }
+  try { body = await request.json() as typeof body }
+  catch { return jsonErr(400, 'Invalid JSON body', origin, env) }
 
-  const key = `listings/${uid}/${crypto.randomUUID()}.${ext}`
-  try {
-    await Promise.all([
-      env.GOJO_LISTINGS.put(key, readable, {
-        httpMetadata: { contentType: mime },
-        customMetadata: { uploadedBy: uid },
-      }),
-      pump,
-    ])
-  } catch {
-    return jsonErr(400, 'Upload was interrupted — please try again', origin, env)
+  const contentType = typeof body.contentType === 'string' ? body.contentType.toLowerCase() : ''
+  const spec = ALLOWED_VIDEO_TYPES[contentType]
+  if (!spec) return jsonErr(400, 'Unsupported video format — use MP4, MOV, 3GP, WebM, or MKV', origin, env)
+
+  const size = Number(body.size)
+  if (!Number.isInteger(size) || size <= 0) return jsonErr(400, 'Invalid file size', origin, env)
+  if (size > MAX_VIDEO_SIZE) return jsonErr(413, 'Video exceeds the 500 MB limit', origin, env)
+
+  const key = `listings/${uid}/${crypto.randomUUID()}.${spec.ext}`
+  const uploadUrl = await presignR2Put(env, key, contentType, size, VIDEO_UPLOAD_URL_TTL)
+  return json({ uploadUrl, key, contentType }, 200, origin, env)
+}
+
+async function handleVideoComplete(request: Request, env: Env, origin: string): Promise<Response> {
+  const uid = await authenticate(request, env)
+  if (!uid) return jsonErr(401, 'Unauthorized', origin, env)
+
+  if (!await rateLimit(env, `write:${uid}`, RATE_LIMITS.write)) {
+    return jsonErr(429, 'Too many requests — please slow down', origin, env)
   }
 
-  // Enforce the length limit from the file itself (the client checks too, but can't be trusted).
-  const seconds = await readMp4DurationSeconds(env.GOJO_LISTINGS, key, size).catch(() => null)
-  if (seconds === null || seconds > MAX_VIDEO_SECONDS + 0.5) {
+  let body: { key?: unknown }
+  try { body = await request.json() as typeof body }
+  catch { return jsonErr(400, 'Invalid JSON body', origin, env) }
+
+  const key = typeof body.key === 'string' ? body.key : ''
+  if (!key.startsWith(`listings/${uid}/`) || key.includes('..') || key.includes('//') || !VIDEO_KEY_EXT.test(key)) {
+    return jsonErr(400, 'Invalid key', origin, env)
+  }
+
+  const head = await env.GOJO_LISTINGS.head(key)
+  if (!head) return jsonErr(404, 'Upload not found — please try again', origin, env)
+
+  const reject = async (message: string) => {
     await env.GOJO_LISTINGS.delete(key).catch(() => {})
-    return jsonErr(400, seconds === null
-      ? 'Could not read the video length — please upload an MP4 or MOV file'
-      : `Video must be ${MAX_VIDEO_SECONDS} seconds or shorter`, origin, env)
+    return jsonErr(400, message, origin, env)
   }
 
-  return json({ key, url: `${env.R2_PUBLIC_URL}/${key}` }, 200, origin, env)
+  const spec = ALLOWED_VIDEO_TYPES[(head.httpMetadata?.contentType ?? '').toLowerCase()]
+  if (!spec || !key.endsWith(`.${spec.ext}`)) return reject('Unsupported video format')
+  if (head.size > MAX_VIDEO_SIZE) return reject('Video exceeds the 500 MB limit')
+
+  const first = await env.GOJO_LISTINGS.get(key, { range: { offset: 0, length: 12 } })
+  const magic = first ? new Uint8Array(await first.arrayBuffer()) : new Uint8Array()
+  if (!isAllowedVideoMagic(magic, spec.family)) return reject('File content does not match its declared type')
+
+  const seconds = await readVideoDurationSeconds(env.GOJO_LISTINGS, key, head.size, spec.family).catch(() => null)
+  if (seconds === null) return reject('Could not read the video length — please try a different file')
+  if (seconds > MAX_VIDEO_SECONDS + 0.5) {
+    return reject(`Video is ${Math.round(seconds)} seconds long — the limit is ${MAX_VIDEO_SECONDS} seconds`)
+  }
+
+  await env.RATE_LIMITER.put(`video-verified:${key}`, '1', { expirationTtl: VIDEO_VERIFIED_TTL })
+  return json({ key, url: `${env.R2_PUBLIC_URL}/${key}`, seconds: Math.round(seconds * 10) / 10 }, 200, origin, env)
+}
+
+function readVideoDurationSeconds(bucket: R2Bucket, key: string, fileSize: number, family: VideoFamily): Promise<number | null> {
+  return family === 'iso'
+    ? readMp4DurationSeconds(bucket, key, fileSize)
+    : readMatroskaDurationSeconds(bucket, key, fileSize)
+}
+
+// ── R2 presigned URLs (AWS Signature V4, query-string auth) ──────────────────
+
+function encodeRfc3986(s: string): string {
+  return encodeURIComponent(s).replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+}
+
+async function hmacSha256(key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> {
+  const k = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  return crypto.subtle.sign('HMAC', k, new TextEncoder().encode(data))
+}
+
+function toHex(buf: ArrayBuffer): string {
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/** Builds a SigV4 presigned URL. `headers` (plus host) must be sent exactly as signed. */
+async function presignUrl(o: {
+  method: string
+  host: string
+  path: string
+  headers: Record<string, string>
+  accessKeyId: string
+  secretAccessKey: string
+  region: string
+  service: string
+  expiresIn: number
+  now: Date
+}): Promise<string> {
+  const amzDate = o.now.toISOString().replace(/[:-]|\.\d{3}/g, '')
+  const date = amzDate.slice(0, 8)
+  const scope = `${date}/${o.region}/${o.service}/aws4_request`
+
+  const headers: Record<string, string> = { host: o.host }
+  for (const [k, v] of Object.entries(o.headers)) headers[k.toLowerCase()] = v.trim()
+  const headerNames = Object.keys(headers).sort()
+  const signedHeaders = headerNames.join(';')
+
+  const canonicalQuery = [
+    ['X-Amz-Algorithm', 'AWS4-HMAC-SHA256'],
+    ['X-Amz-Credential', `${o.accessKeyId}/${scope}`],
+    ['X-Amz-Date', amzDate],
+    ['X-Amz-Expires', String(o.expiresIn)],
+    ['X-Amz-SignedHeaders', signedHeaders],
+  ]
+    .map(([k, v]) => [encodeRfc3986(k), encodeRfc3986(v)])
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&')
+
+  const canonicalRequest = [
+    o.method,
+    o.path,
+    canonicalQuery,
+    headerNames.map(k => `${k}:${headers[k]}\n`).join(''),
+    signedHeaders,
+    'UNSIGNED-PAYLOAD',
+  ].join('\n')
+
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    scope,
+    toHex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalRequest))),
+  ].join('\n')
+
+  let signingKey = await hmacSha256(new TextEncoder().encode(`AWS4${o.secretAccessKey}`), date)
+  signingKey = await hmacSha256(signingKey, o.region)
+  signingKey = await hmacSha256(signingKey, o.service)
+  signingKey = await hmacSha256(signingKey, 'aws4_request')
+  const signature = toHex(await hmacSha256(signingKey, stringToSign))
+
+  return `https://${o.host}${o.path}?${canonicalQuery}&X-Amz-Signature=${signature}`
+}
+
+function presignR2Put(env: Env, key: string, contentType: string, size: number, expiresIn: number): Promise<string> {
+  return presignUrl({
+    method: 'PUT',
+    host: `${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    path: `/${env.R2_BUCKET_NAME}/${key.split('/').map(encodeRfc3986).join('/')}`,
+    headers: { 'content-type': contentType, 'content-length': String(size) },
+    accessKeyId: env.R2_ACCESS_KEY_ID,
+    secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+    region: 'auto',
+    service: 's3',
+    expiresIn,
+    now: new Date(),
+  })
+}
+
+/**
+ * Reads a WebM/MKV duration from the Segment > Info element near the start of
+ * the file (Duration × TimecodeScale). Returns null when absent — e.g. live
+ * recordings written without a duration.
+ */
+async function readMatroskaDurationSeconds(bucket: R2Bucket, key: string, fileSize: number): Promise<number | null> {
+  const obj = await bucket.get(key, { range: { offset: 0, length: Math.min(fileSize, 512 * 1024) } })
+  if (!obj) return null
+  const v = new DataView(await obj.arrayBuffer())
+  const len = v.byteLength
+
+  // EBML variable-length integers: the leading 1-bit marks the width.
+  const vintWidth = (first: number) => { for (let n = 1; n <= 8; n++) if (first & (0x80 >> (n - 1))) return n; return 0 }
+  const readId = (p: number) => {
+    const w = vintWidth(v.getUint8(p))
+    if (!w || w > 4 || p + w > len) return null
+    let id = 0
+    for (let i = 0; i < w; i++) id = id * 256 + v.getUint8(p + i)
+    return { id, next: p + w }
+  }
+  const readSize = (p: number) => {
+    const first = v.getUint8(p)
+    const w = vintWidth(first)
+    if (!w || p + w > len) return null
+    let size = first & (0xff >> w)
+    let allOnes = size === (0xff >> w)
+    for (let i = 1; i < w; i++) {
+      const b = v.getUint8(p + i)
+      size = size * 256 + b
+      if (b !== 0xff) allOnes = false
+    }
+    return { size: allOnes ? -1 : size, next: p + w } // -1 = unknown size
+  }
+  const readUint = (p: number, n: number) => { let x = 0; for (let i = 0; i < n; i++) x = x * 256 + v.getUint8(p + i); return x }
+
+  let p = 0
+  const ebml = readId(p)
+  if (!ebml || ebml.id !== 0x1A45DFA3) return null
+  const ebmlSize = readSize(ebml.next)
+  if (!ebmlSize || ebmlSize.size < 0) return null
+  p = ebmlSize.next + ebmlSize.size
+
+  const seg = p < len ? readId(p) : null
+  if (!seg || seg.id !== 0x18538067) return null
+  const segSize = readSize(seg.next)
+  if (!segSize) return null
+  p = segSize.next
+  const segEnd = segSize.size < 0 ? len : Math.min(len, segSize.next + segSize.size)
+
+  while (p < segEnd) {
+    const el = readId(p)
+    if (!el) return null
+    const sz = readSize(el.next)
+    if (!sz) return null
+    if (el.id === 0x1549A966) { // Info
+      const end = sz.size < 0 ? segEnd : Math.min(segEnd, sz.next + sz.size)
+      let q = sz.next
+      let timecodeScale = 1_000_000 // default: 1 ms
+      let duration: number | null = null
+      while (q < end) {
+        const c = readId(q)
+        if (!c) break
+        const cs = readSize(c.next)
+        if (!cs || cs.size < 0 || cs.next + cs.size > len) break
+        if (c.id === 0x2AD7B1) timecodeScale = readUint(cs.next, cs.size)
+        if (c.id === 0x4489) duration = cs.size === 4 ? v.getFloat32(cs.next) : cs.size === 8 ? v.getFloat64(cs.next) : null
+        q = cs.next + cs.size
+      }
+      return duration !== null && duration > 0 ? (duration * timecodeScale) / 1e9 : null
+    }
+    if (sz.size < 0) return null // an unknown-size element (e.g. a Cluster) before Info
+    p = sz.next + sz.size
+  }
+  return null
 }
 
 /**
@@ -1958,7 +2153,7 @@ function validateBody(body: ListingBody, env: Env): string[] {
       errors.push('video must have url and key fields')
     } else if (!v.url.startsWith(`${env.R2_PUBLIC_URL}/listings/`) || v.url !== `${env.R2_PUBLIC_URL}/${v.key}`) {
       errors.push('Invalid video URL — must be hosted in the Gojo R2 bucket')
-    } else if (v.key.includes('..') || v.key.includes('//') || !/\.(mp4|mov)$/.test(v.key)) {
+    } else if (v.key.includes('..') || v.key.includes('//') || !VIDEO_KEY_EXT.test(v.key)) {
       errors.push('Invalid video key')
     }
   }
@@ -1968,11 +2163,15 @@ function validateBody(body: ListingBody, env: Env): string[] {
 
 // ── Video magic-byte check ────────────────────────────────────────────────────
 
-function isAllowedVideoMagic(b: Uint8Array, mime: string): boolean {
-  // MP4 / QuickTime: bytes 4–7 are the ASCII box type "ftyp"
-  const isIsoMedia = b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70
-  if (mime === 'video/mp4' || mime === 'video/quicktime') return isIsoMedia
-  return false
+function isAllowedVideoMagic(b: Uint8Array, family: VideoFamily): boolean {
+  if (b.length < 8) return false
+  if (family === 'iso') {
+    // MP4 / MOV / 3GP: the file starts with a box whose type (bytes 4–7) is one of these
+    const type = String.fromCharCode(b[4], b[5], b[6], b[7])
+    return ['ftyp', 'moov', 'mdat', 'wide', 'free', 'skip', 'pnot'].includes(type)
+  }
+  // WebM / Matroska: EBML header 1A 45 DF A3
+  return b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3
 }
 
 // ── Image magic-byte check ────────────────────────────────────────────────────
