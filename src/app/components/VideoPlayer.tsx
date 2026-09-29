@@ -71,20 +71,24 @@ export default function VideoPlayer({
   const [rendering, setRendering] = useState(false)
   // Muted by the browser's autoplay policy rather than by the viewer.
   const autoMutedRef = useRef(false)
+  const [autoMuted, setAutoMutedState] = useState(false)
+  const setAutoMuted = useCallback((v: boolean) => { autoMutedRef.current = v; setAutoMutedState(v) }, [])
 
   const play = useCallback(() => {
     const v = videoRef.current
     if (!v) return
     // Retry with sound: a tap since the last attempt may have unlocked it.
-    if (autoMutedRef.current) { v.muted = false; setMuted(false); autoMutedRef.current = false }
-    v.play().catch(() => {
+    if (autoMutedRef.current) { v.muted = false; setMuted(false); setAutoMuted(false) }
+    v.play().catch((err: DOMException) => {
+      // Interrupted by a pause/reload (e.g. swiped away mid-load) — not a sound refusal.
+      if (err.name === 'AbortError') return
       // Autoplay with sound is blocked: retry muted.
       v.muted = true
       setMuted(true)
-      autoMutedRef.current = true
-      v.play().catch(() => setShowPlayButton(true))
+      setAutoMuted(true)
+      v.play().catch(e => { if (e.name !== 'AbortError') setShowPlayButton(true) })
     })
-  }, [])
+  }, [setAutoMuted])
 
   // React doesn't reliably update the `muted` property after mount, so set it directly.
   useEffect(() => {
@@ -114,16 +118,20 @@ export default function VideoPlayer({
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
 
+  // Must run inside a tap so the browser lets the sound through.
+  const unmute = () => {
+    const v = videoRef.current
+    if (!v) return
+    v.muted = false
+    setMuted(false)
+    setAutoMuted(false)
+  }
+
   const toggle = () => {
     const v = videoRef.current
     if (!v) return
     // The first tap on an autoplaying video that the browser muted turns the sound on.
-    if (autoMutedRef.current && !v.paused) {
-      v.muted = false
-      setMuted(false)
-      autoMutedRef.current = false
-      return
-    }
+    if (autoMutedRef.current && !v.paused) { unmute(); return }
     if (v.paused) play()
     else { v.pause(); setShowPlayButton(true) }
   }
@@ -155,7 +163,7 @@ export default function VideoPlayer({
       if (e.key === ' ' || e.key === 'k') { e.preventDefault(); toggle() }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); seekTo(v.currentTime - 5) }
       else if (e.key === 'ArrowRight') { e.preventDefault(); seekTo(v.currentTime + 5) }
-      else if (e.key === 'm') { autoMutedRef.current = false; setMuted(m => !m) }
+      else if (e.key === 'm') { setAutoMuted(false); setMuted(m => !m) }
       else if (e.key === 'f') toggleFullscreen()
     }
     window.addEventListener('keydown', onKey)
@@ -194,6 +202,20 @@ export default function VideoPlayer({
 
       {autoPlay && active && !rendering && !showPlayButton && (
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-10 w-10 -translate-x-1/2 -translate-y-1/2 animate-spin rounded-full border-2 border-background/30 border-t-background" aria-label="Loading video" />
+      )}
+
+      {/* The browser muted autoplay — make the way back to sound obvious */}
+      {autoMuted && playing && active && (
+        <button
+          type="button"
+          onClick={unmute}
+          className={cn(
+            'absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-foreground/60 px-4 py-2 text-sm font-semibold text-background backdrop-blur',
+            controlsPosition === 'screen-bottom' ? 'top-[calc(env(safe-area-inset-top)+1.75rem)] md:top-8' : 'top-4',
+          )}
+        >
+          <VolumeX className="h-4 w-4" /> Tap for sound
+        </button>
       )}
 
       {/* Big play button while paused */}
@@ -247,7 +269,7 @@ export default function VideoPlayer({
           className="h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded-full [touch-action:none] [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
         />
         <span className="shrink-0 text-xs font-semibold tabular-nums opacity-80">{formatTime(duration)}</span>
-        <ControlButton label={muted ? 'Unmute' : 'Mute'} onClick={() => { autoMutedRef.current = false; setMuted(m => !m) }}>
+        <ControlButton label={muted ? 'Unmute' : 'Mute'} onClick={() => { setAutoMuted(false); setMuted(m => !m) }}>
           {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
         </ControlButton>
         <ControlButton label={fullscreen ? 'Exit full screen' : 'Full screen'} onClick={toggleFullscreen}>
