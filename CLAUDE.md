@@ -102,7 +102,7 @@ Set in `worker/wrangler.toml` (plain vars) or via `wrangler secret put` (secrets
 | `FIREBASE_PROJECT_ID` | `wrangler.toml` [vars] | `gojo-9e529` |
 | `ALLOWED_ORIGIN` | `wrangler.toml` [vars] | `https://yevilla.com` |
 | `ADMIN_SECRET` | Cloudflare secret | shared with admin dashboard `.env.local` |
-| `R2_PUBLIC_URL` | Cloudflare secret | `https://pub-XXXX.r2.dev` |
+| `R2_PUBLIC_URL` | Cloudflare secret | `https://media.yevilla.com` (cached custom domain on the bucket; old `r2.dev` URLs in D1 are rewritten on read) |
 | `BREVO_API_KEY` | Cloudflare secret | Brevo transactional email API key |
 | `STAFF_EMAIL` | Cloudflare secret | recipient for form submissions (default: anaibrahim628@gmail.com) |
 | `TURNSTILE_SECRET` | Cloudflare secret | Cloudflare Turnstile secret key; verifies contact-form submissions |
@@ -124,7 +124,7 @@ NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
 NEXT_PUBLIC_FIREBASE_APP_ID=
 NEXT_PUBLIC_WORKER_URL=          # https://gojo-upload.ana-ibrahim433.workers.dev
-NEXT_PUBLIC_R2_PUBLIC_URL=       # https://pub-XXXX.r2.dev
+NEXT_PUBLIC_R2_PUBLIC_URL=       # https://media.yevilla.com
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=  # Cloudflare Turnstile public site key (contact-form anti-spam)
 ```
 

@@ -164,6 +164,7 @@ export default {
 
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const origin = request.headers.get('Origin') ?? ''
+    mediaBase = env.R2_PUBLIC_URL
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders(origin, env) })
@@ -303,6 +304,19 @@ async function getAgentUids(env: Env): Promise<Set<string>> {
   const uids = results.map(r => r.uid)
   env.RATE_LIMITER.put(AGENT_UIDS_KEY, JSON.stringify(uids), { expirationTtl: 300 }).catch(() => {})
   return new Set(uids)
+}
+
+// ── Media URLs ────────────────────────────────────────────────────────────────
+// Photos/videos used to be served from the bucket's r2.dev address (uncached and
+// rate-limited). They now go through the cached custom domain in R2_PUBLIC_URL.
+// Rows saved before the switch still hold r2.dev URLs, so rewrite them on the way
+// out; older clients may also send them back on save, so accept both on the way in.
+const LEGACY_R2_URL = 'https://pub-b2ec9ffdcf0f4c288d36da6bf1acfa39.r2.dev'
+let mediaBase = ''
+
+function mediaUrl<T extends string | null | undefined>(url: T): T {
+  if (!url || !mediaBase || !url.startsWith(`${LEGACY_R2_URL}/`)) return url
+  return (mediaBase + url.slice(LEGACY_R2_URL.length)) as T
 }
 
 // ── Edge cache helpers ────────────────────────────────────────────────────────
@@ -2116,6 +2130,12 @@ function sanitizeBody(body: ListingBody): void {
 // ── Input validation ──────────────────────────────────────────────────────────
 
 function validateBody(body: ListingBody, env: Env): string[] {
+  // Store the current media address even when an older client sends r2.dev URLs.
+  if (Array.isArray(body.photos)) {
+    body.photos = body.photos.map(p => (typeof p?.url === 'string' ? { ...p, url: mediaUrl(p.url) } : p))
+  }
+  if (body.video && typeof body.video.url === 'string') body.video = { ...body.video, url: mediaUrl(body.video.url) }
+  if (typeof body.ownerPhotoURL === 'string') body.ownerPhotoURL = mediaUrl(body.ownerPhotoURL)
   const errors: string[] = []
 
   if (body.city && !ALLOWED_CITIES.has(body.city)) {
@@ -2232,7 +2252,7 @@ function rowToListing(row: ListingRow & { agent_phone_from_agents?: string | nul
     id:               row.id,
     ownerId:          row.owner_id,
     ownerDisplayName: row.owner_display_name,
-    ownerPhotoURL:    row.owner_photo_url,
+    ownerPhotoURL:    mediaUrl(row.owner_photo_url),
     ...(includeEmail ? { ownerEmail: row.owner_email } : {}),
     city:          row.city ?? '',
     subCity:       row.sub_city ?? '',
@@ -2251,8 +2271,11 @@ function rowToListing(row: ListingRow & { agent_phone_from_agents?: string | nul
     availableFrom: row.available_from,
     description:   row.description ?? '',
     amenities:     safeParseJSON<string[]>(row.amenities, []),
-    photos:        safeParseJSON<{ url: string; key: string }[]>(row.photos, []),
-    video:         row.video ? safeParseJSON<{ url: string; key: string } | null>(row.video, null) : null,
+    photos:        safeParseJSON<{ url: string; key: string }[]>(row.photos, []).map(p => ({ ...p, url: mediaUrl(p.url) })),
+    video:         (() => {
+      const v = row.video ? safeParseJSON<{ url: string; key: string } | null>(row.video, null) : null
+      return v ? { ...v, url: mediaUrl(v.url) } : null
+    })(),
     agentPhone:    row.agent_phone ?? row.agent_phone_from_agents ?? undefined,
     status:        row.status,
     viewCount:     row.view_count ?? 0,
