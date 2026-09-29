@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo, ReactNode } from 'react'
 import { apiListingToProperty, type Property } from '@/app/data/properties'
+import { OWNER_RENAMED_EVENT } from './auth-context'
 
 const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL ?? ''
 
@@ -69,6 +70,19 @@ export function ListingsProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => { fetchPage(1, false) }, [fetchPage])
+
+  // Show a user's new name on their listings right away (the server copy is updated too).
+  useEffect(() => {
+    const onRename = (e: Event) => {
+      const { uid, name } = (e as CustomEvent<{ uid: string; name: string | null }>).detail
+      const rename = (props: Property[]) =>
+        props.map(p => (p.ownerId === uid ? { ...p, ownerDisplayName: name ?? undefined } : p))
+      setListings(rename)
+      PAGE_CACHE.forEach(entry => { entry.props = rename(entry.props) })
+    }
+    window.addEventListener(OWNER_RENAMED_EVENT, onRename)
+    return () => window.removeEventListener(OWNER_RENAMED_EVENT, onRename)
+  }, [])
 
   const loadMore = useCallback(() => {
     if (loadingMore || !hasMore) return

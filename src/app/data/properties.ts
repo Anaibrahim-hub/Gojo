@@ -65,6 +65,7 @@ export interface Property {
   agentId?: string
   isAgent?: boolean
   firestoreId?: string    // original Firestore document ID
+  ownerId?: string
   ownerDisplayName?: string
   ownerPhotoURL?: string
   ownerEmail?: string
@@ -110,6 +111,7 @@ export function apiListingToProperty(d: Record<string, unknown>): Property {
     propertyType: (d.propertyType as string) ?? '',
     furnished: ((d.amenities as string[] | undefined) ?? []).includes('Furnished'),
     isAgent: (d.isAgent as boolean) ?? false,
+    ownerId: (d.ownerId as string) ?? undefined,
     ownerDisplayName: (d.ownerDisplayName as string) ?? undefined,
     ownerPhotoURL: (d.ownerPhotoURL as string) ?? undefined,
     ownerEmail: (d.ownerEmail as string) ?? undefined,

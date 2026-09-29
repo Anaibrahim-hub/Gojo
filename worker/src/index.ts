@@ -200,6 +200,9 @@ export default {
         if (request.method === 'PUT') return await handleSetFavorites(request, env, origin)
         if (request.method === 'PATCH') return await handlePatchFavorite(request, env, origin)
       }
+      if (pathname === '/profile' && request.method === 'PATCH') {
+        return await handleUpdateProfile(request, env, origin)
+      }
       if (pathname === '/push-token' && request.method === 'POST') {
         return await handleRegisterPushToken(request, env, origin)
       }
@@ -1692,6 +1695,24 @@ async function handleMarkNotificationsRead(request: Request, env: Env, origin: s
     await env.DB.prepare('UPDATE notifications SET read = 1 WHERE user_id = ?').bind(uid).run()
   }
 
+  return json({ ok: true }, 200, origin, env)
+}
+
+// Listings keep a copy of the owner's name (shown as "Listed by …" and as the title
+// of hotels/venues); refresh it on all of the caller's listings after a rename.
+async function handleUpdateProfile(request: Request, env: Env, origin: string): Promise<Response> {
+  const uid = await authenticate(request, env)
+  if (!uid) return jsonErr(401, 'Unauthorized', origin, env)
+
+  let body: { displayName?: unknown }
+  try { body = await request.json() as typeof body }
+  catch { return jsonErr(400, 'Invalid JSON', origin, env) }
+
+  if (typeof body.displayName !== 'string') return jsonErr(400, 'displayName is required', origin, env)
+  const displayName = sanitizeText(body.displayName, 150) || null
+
+  await env.DB.prepare('UPDATE listings SET owner_display_name = ? WHERE owner_id = ?')
+    .bind(displayName, uid).run()
   return json({ ok: true }, 200, origin, env)
 }
 

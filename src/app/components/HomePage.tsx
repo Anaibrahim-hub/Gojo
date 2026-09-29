@@ -116,7 +116,7 @@ function PropertyCarouselCard({
 // ── Main component ────────────────────────────────────────────────────────────
 export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageProps) {
   const router = useRouter();
-  const { user, photoURL, signOut, loading } = useAuth();
+  const { user, photoURL, displayName, signOut, loading } = useAuth();
   const { isFavorite, toggleFavorite } = useFavorites();
   const { listings: apiListings, loading: loadingListings } = useListings();
 
@@ -373,15 +373,15 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                 <button onClick={() => setShowUserMenu(v => !v)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all hover:bg-gray-100 text-gray-700">
                   {photoURL
                     ? <img src={photoURL} alt="" className="w-7 h-7 rounded-full object-cover" referrerPolicy="no-referrer" />
-                    : <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">{user.displayName?.[0] ?? '?'}</div>
+                    : <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">{displayName?.[0] ?? '?'}</div>
                   }
-                  <span className="text-sm font-medium max-w-[100px] truncate">{user.displayName ?? user.email}</span>
+                  <span className="text-sm font-medium max-w-[100px] truncate">{displayName ?? user.email}</span>
                   <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showUserMenu ? '-rotate-90' : 'rotate-90'} opacity-50`} />
                 </button>
                 {showUserMenu && (
                   <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-50">
                     <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-                      {user.displayName && <p className="text-sm font-semibold text-gray-900 truncate">{user.displayName}</p>}
+                      {displayName && <p className="text-sm font-semibold text-gray-900 truncate">{displayName}</p>}
                       <p className="text-xs text-gray-500 truncate">{user.email}</p>
                     </div>
                     <div className="py-1">
@@ -767,10 +767,10 @@ export default function HomePage({ onNavigateToMap, onPropertyClick }: HomePageP
                   <div className="flex items-center gap-3 px-3 py-3 mb-1">
                     {photoURL
                       ? <img src={photoURL} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" referrerPolicy="no-referrer" />
-                      : <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">{user.displayName?.[0] ?? '?'}</div>
+                      : <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">{displayName?.[0] ?? '?'}</div>
                     }
                     <div className="min-w-0">
-                      {user.displayName && <p className="font-semibold text-gray-900 text-sm truncate">{user.displayName}</p>}
+                      {displayName && <p className="font-semibold text-gray-900 text-sm truncate">{displayName}</p>}
                       <p className="text-xs text-gray-500 truncate">{user.email}</p>
                     </div>
                   </div>

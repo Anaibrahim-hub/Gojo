@@ -24,6 +24,9 @@ interface AuthContextType {
   updateUserProfile: (data: { displayName?: string }) => Promise<void>
 }
 
+/** Fired after the signed-in user renames themselves: `{ detail: { uid, name } }`. */
+export const OWNER_RENAMED_EVENT = 'gojo:owner-renamed'
+
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -85,8 +88,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateUserProfile = useCallback(async (data: { displayName?: string }) => {
     if (!auth.currentUser) return
-    await updateProfile(auth.currentUser, data)
-    if ('displayName' in data) setDisplayName(data.displayName ?? null)
+    const u = auth.currentUser
+    await updateProfile(u, data)
+    if (!('displayName' in data)) return
+    const name = data.displayName ?? null
+    setDisplayName(name)
+    // Update the copy of the name stored on this user's listings, then tell open pages.
+    window.dispatchEvent(new CustomEvent(OWNER_RENAMED_EVENT, { detail: { uid: u.uid, name } }))
+    const token = await u.getIdToken()
+    await fetch(`${process.env.NEXT_PUBLIC_WORKER_URL}/profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ displayName: name ?? '' }),
+    }).catch(() => {})
   }, [])
 
   const value = useMemo(

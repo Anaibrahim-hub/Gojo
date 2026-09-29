@@ -93,7 +93,7 @@ export default function FilterPanel({
 
   const userMenuRef = useRef<HTMLDivElement>(null);
   const filterChipsRef = useRef<HTMLDivElement>(null);
-  const { user, photoURL, signOut, loading } = useAuth();
+  const { user, photoURL, displayName, signOut, loading } = useAuth();
   const [isAgent, setIsAgent] = useState(false);
   const [isAgentChecked, setIsAgentChecked] = useState(false);
 
@@ -454,16 +454,16 @@ export default function FilterPanel({
                 className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-all"
               >
                 {photoURL
-                  ? <img src={photoURL} alt={user.displayName || ''} className="w-7 h-7 rounded-full object-cover" referrerPolicy="no-referrer" />
-                  : <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">{user.displayName?.[0] ?? '?'}</div>
+                  ? <img src={photoURL} alt={displayName || ''} className="w-7 h-7 rounded-full object-cover" referrerPolicy="no-referrer" />
+                  : <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">{displayName?.[0] ?? '?'}</div>
                 }
-                <span className="text-sm font-medium text-gray-700 max-w-[100px] truncate">{user.displayName}</span>
+                <span className="text-sm font-medium text-gray-700 max-w-[100px] truncate">{displayName}</span>
                 <ChevronRight className={`w-3.5 h-3.5 text-gray-400 transition-transform ${showUserMenu ? '-rotate-90' : 'rotate-90'}`} />
               </button>
               {showUserMenu && (
                 <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50">
                   <div className="px-4 py-3 border-b border-gray-100">
-                    {user.displayName && <p className="text-sm font-semibold text-gray-900 truncate">{user.displayName}</p>}
+                    {displayName && <p className="text-sm font-semibold text-gray-900 truncate">{displayName}</p>}
                     <p className="text-xs text-gray-500 truncate">{user.email}</p>
                   </div>
                   <div className="py-1">
@@ -655,11 +655,11 @@ export default function FilterPanel({
               {user && (
                 <div className="flex items-center gap-3 px-3 py-3 mb-1">
                   {photoURL
-                    ? <img src={photoURL} alt={user.displayName || ''} className="w-8 h-8 rounded-full object-cover flex-shrink-0" referrerPolicy="no-referrer" />
-                    : <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">{user.displayName?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}</div>
+                    ? <img src={photoURL} alt={displayName || ''} className="w-8 h-8 rounded-full object-cover flex-shrink-0" referrerPolicy="no-referrer" />
+                    : <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">{displayName?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}</div>
                   }
                   <div className="min-w-0">
-                    {user.displayName && <p className="font-semibold text-gray-900 truncate text-sm">{user.displayName}</p>}
+                    {displayName && <p className="font-semibold text-gray-900 truncate text-sm">{displayName}</p>}
                     <p className="text-xs text-gray-500 truncate">{user.email}</p>
                   </div>
                 </div>
