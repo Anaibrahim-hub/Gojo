@@ -132,7 +132,6 @@ export default function ReelsView() {
               active={active}
               autoPlay
               loop
-              preload={Math.abs(i - activeIndex) <= 1}
               controlsPosition="screen-bottom"
               hideControlsOnMobile
               className="absolute inset-0"
@@ -154,13 +153,8 @@ export default function ReelsView() {
                 </button>
               </div>
 
-              {/* Listing info — tap anywhere here to open the listing modal */}
-              <button
-                type="button"
-                onClick={() => openListing(l)}
-                aria-label={`Open listing: ${listingTitle(l)}`}
-                className="group absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] z-10 block px-5 pr-20 text-left text-background md:bottom-20 md:px-10"
-              >
+              {/* Listing info — taps pass through to the video; only "View listing" opens it */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] z-10 px-5 pr-20 text-left text-background md:bottom-20 md:px-10">
                 <div className="max-w-2xl">
                   <h2 className="text-xl font-bold leading-tight first-letter:uppercase md:text-3xl">{listingTitle(l)}</h2>
                   <div className="mt-1.5 flex items-center gap-2 text-sm opacity-90 md:text-base">
@@ -174,11 +168,16 @@ export default function ReelsView() {
                   {l.description && (
                     <p className="mt-2 hidden max-w-xl text-sm opacity-90 md:line-clamp-2">{l.description}</p>
                   )}
-                  <span className="mt-3 inline-block rounded-full bg-background px-5 py-2 text-xs font-semibold text-foreground shadow-lg transition-transform group-hover:scale-105 md:text-sm">
+                  <button
+                    type="button"
+                    onClick={() => openListing(l)}
+                    aria-label={`View listing: ${listingTitle(l)}`}
+                    className="pointer-events-auto mt-3 inline-block rounded-full bg-background px-5 py-2 text-xs font-semibold text-foreground shadow-lg transition-transform hover:scale-105 md:text-sm"
+                  >
                     View listing
-                  </span>
+                  </button>
                 </div>
-              </button>
+              </div>
             </VideoPlayer>
           </section>
         )

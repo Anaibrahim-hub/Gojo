@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Maximize, Minimize, Pause, Play, RotateCcw, RotateCw, Volume2, VolumeX } from 'lucide-react'
 import { img } from '@/lib/image'
+import { loadSharedVideo, sharedVideo } from '@/lib/shared-video'
 import { cn } from './ui/utils'
 
 const SKIP_SECONDS = 10
@@ -25,7 +26,6 @@ export default function VideoPlayer({
   active = true,
   autoPlay = false,
   loop = false,
-  preload = false,
   controlsPosition = 'bottom',
   hideControlsOnMobile = false,
   className,
@@ -44,8 +44,6 @@ export default function VideoPlayer({
   autoPlay?: boolean
   /** Repeat at the end (feed videos) instead of stopping (listing player). */
   loop?: boolean
-  /** Buffer the video ahead of time (e.g. the next reel) so it starts without a flash. */
-  preload?: boolean
   /**
    * Where the control bar sits: 'bottom' (inside a gallery slide) or 'screen-bottom'
    * (a full-screen page: pinned to the bottom edge, clear of the phone's home bar).
@@ -57,7 +55,9 @@ export default function VideoPlayer({
   children?: React.ReactNode
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
+  // The shared <video> element while this player is active (null otherwise).
+  const videoRef = useRef<HTMLVideoElement | null>(null)
   const [playing, setPlaying] = useState(false)
   const [muted, setMuted] = useState(false)
   const [time, setTime] = useState(0)
@@ -90,18 +90,54 @@ export default function VideoPlayer({
     })
   }, [setAutoMuted])
 
-  // React doesn't reliably update the `muted` property after mount, so set it directly.
+  const mutedRef = useRef(muted)
+  mutedRef.current = muted
   useEffect(() => {
     if (videoRef.current) videoRef.current.muted = muted
   }, [muted])
 
-  // Pause when inactive; autoplay when it becomes active.
+  // Latest tap handler for the shared element's click listener.
+  const toggleRef = useRef<() => void>(() => {})
+
+  // While active, borrow the shared <video> element (see lib/shared-video); give it
+  // back (paused) when scrolled away or on another slide. Autoplay once it's ours.
   useEffect(() => {
-    const v = videoRef.current
-    if (!v) return
-    if (!active) v.pause()
-    else if (autoPlay) play()
-  }, [active, autoPlay, play])
+    const host = hostRef.current
+    if (!active || !host) return
+    const v = sharedVideo()
+    loadSharedVideo(src)
+    v.loop = loop
+    v.setAttribute('aria-label', title)
+    v.muted = mutedRef.current
+    host.appendChild(v)
+    videoRef.current = v
+
+    setPlaying(!v.paused)
+    setRendering(!v.paused && v.readyState >= 3)
+    setTime(v.currentTime)
+    setDuration(Number.isFinite(v.duration) ? v.duration : 0)
+
+    const listeners: [string, () => void][] = [
+      ['click', () => toggleRef.current()],
+      ['play', () => { setPlaying(true); setStarted(true); setShowPlayButton(false) }],
+      ['playing', () => setRendering(true)],
+      ['waiting', () => setRendering(false)],
+      ['pause', () => setPlaying(false)],
+      ['ended', () => { setPlaying(false); setShowPlayButton(true) }],
+      ['timeupdate', () => setTime(v.currentTime)],
+      ['loadedmetadata', () => setDuration(v.duration)],
+      ['durationchange', () => setDuration(v.duration)],
+    ]
+    listeners.forEach(([type, fn]) => v.addEventListener(type, fn))
+    if (autoPlay) play()
+
+    return () => {
+      listeners.forEach(([type, fn]) => v.removeEventListener(type, fn))
+      videoRef.current = null
+      // Another player may already have taken it over in the same update.
+      if (v.parentElement === host) { v.pause(); host.removeChild(v) }
+    }
+  }, [active, src, loop, title, autoPlay, play])
 
   useEffect(() => {
     const onChange = () => {
@@ -135,6 +171,8 @@ export default function VideoPlayer({
     if (v.paused) play()
     else { v.pause(); setShowPlayButton(true) }
   }
+
+  toggleRef.current = toggle
 
   const seekTo = (t: number) => {
     const v = videoRef.current
@@ -180,24 +218,13 @@ export default function VideoPlayer({
       {poster && !autoPlay && (
         <img src={img(poster, { width: 1080 })} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" />
       )}
-      <video
-        ref={videoRef}
-        src={src}
-        muted={muted}
-        loop={loop}
-        playsInline
-        preload={active || preload ? 'auto' : 'metadata'}
-        aria-label={title}
-        onClick={toggle}
-        onPlay={() => { setPlaying(true); setStarted(true); setShowPlayButton(false) }}
-        onPlaying={() => setRendering(true)}
-        onWaiting={() => setRendering(false)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => { setPlaying(false); setShowPlayButton(true) }}
-        onTimeUpdate={e => setTime(e.currentTarget.currentTime)}
-        onLoadedMetadata={e => setDuration(e.currentTarget.duration)}
-        onDurationChange={e => setDuration(e.currentTarget.duration)}
-        className={cn('absolute inset-0 h-full w-full cursor-pointer', fullscreen ? 'object-contain' : 'object-cover')}
+      {/* The shared <video> element is placed in here while this player is active */}
+      <div
+        ref={hostRef}
+        className={cn(
+          'absolute inset-0 [&>video]:h-full [&>video]:w-full [&>video]:cursor-pointer',
+          fullscreen ? '[&>video]:object-contain' : '[&>video]:object-cover',
+        )}
       />
 
       {autoPlay && active && !rendering && !showPlayButton && (

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Play } from 'lucide-react'
 import { useListings } from '@/lib/listings-context'
 import { img } from '@/lib/image'
+import { primeSharedVideo } from '@/lib/shared-video'
 import { listingKey, listingTitle, placeLabel, tourListings } from '@/lib/listing-utils'
 
 export default function VideoReels() {
@@ -14,7 +15,11 @@ export default function VideoReels() {
 
   if (!loading && tours.length === 0) return null
 
-  const open = (i: number) => router.push(`/reels?start=${encodeURIComponent(listingKey(tours[i]))}`)
+  const open = (i: number) => {
+    // Unlock sound during the tap so the tour starts playing with audio.
+    primeSharedVideo(tours[i].video!)
+    router.push(`/reels?start=${encodeURIComponent(listingKey(tours[i]))}`)
+  }
 
   return (
     <section className="mx-auto max-w-7xl px-6 pt-6">

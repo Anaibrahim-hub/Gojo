@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState, type
 import ListingSheet from '@/app/components/ListingSheet'
 import type { Property } from '@/app/data/properties'
 import type { Mode } from './listing-utils'
+import { primeSharedVideo } from './shared-video'
 
 interface ListingModalContextValue {
   /** The listing currently shown in the modal, if any. */
@@ -20,6 +21,8 @@ export function ListingModalProvider({ children }: { children: ReactNode }) {
   const onCloseRef = useRef<(() => void) | undefined>(undefined)
 
   const openListing = useCallback<ListingModalContextValue['openListing']>((p, opts) => {
+    // Opening happens inside a tap: unlock sound for the listing's video tour now.
+    if (p.video) primeSharedVideo(p.video)
     onCloseRef.current = opts?.onClose
     setMode(opts?.mode ?? null)
     setCurrent(p)
