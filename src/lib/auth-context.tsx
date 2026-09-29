@@ -27,6 +27,21 @@ interface AuthContextType {
 /** Fired after the signed-in user renames themselves: `{ detail: { uid, name } }`. */
 export const OWNER_RENAMED_EVENT = 'gojo:owner-renamed'
 
+/**
+ * Listings store a copy of the owner's name ("Listed by …", hotel/venue titles).
+ * Push the current name to all of the user's listings via the worker.
+ */
+async function syncListingOwnerName(u: User, name: string) {
+  try {
+    const token = await u.getIdToken()
+    await fetch(`${process.env.NEXT_PUBLIC_WORKER_URL}/profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ displayName: name }),
+    })
+  } catch { /* best effort; retried next session */ }
+}
+
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -49,6 +64,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       )
       setPhotoURL(isThirdParty ? null : url)
       setLoading(false)
+      // Once per session, catch listings up with a rename made elsewhere (e.g. the app).
+      if (u && !u.isAnonymous && u.displayName) {
+        window.dispatchEvent(new CustomEvent(OWNER_RENAMED_EVENT, { detail: { uid: u.uid, name: u.displayName } }))
+        const key = `gojo_name_synced_${u.uid}`
+        try {
+          if (sessionStorage.getItem(key) !== u.displayName) {
+            sessionStorage.setItem(key, u.displayName)
+            syncListingOwnerName(u, u.displayName)
+          }
+        } catch { syncListingOwnerName(u, u.displayName) }
+      }
     })
     return unsubscribe
   }, [])
@@ -93,14 +119,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!('displayName' in data)) return
     const name = data.displayName ?? null
     setDisplayName(name)
-    // Update the copy of the name stored on this user's listings, then tell open pages.
+    // Tell open pages, and update the copy of the name stored on this user's listings.
     window.dispatchEvent(new CustomEvent(OWNER_RENAMED_EVENT, { detail: { uid: u.uid, name } }))
-    const token = await u.getIdToken()
-    await fetch(`${process.env.NEXT_PUBLIC_WORKER_URL}/profile`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ displayName: name ?? '' }),
-    }).catch(() => {})
+    await syncListingOwnerName(u, name ?? '')
   }, [])
 
   const value = useMemo(
