@@ -67,6 +67,8 @@ export default function VideoPlayer({
   // Autoplay feeds only show the big play button when the viewer paused (or playback
   // was refused), so it doesn't flash while swiping between videos.
   const [showPlayButton, setShowPlayButton] = useState(false)
+  // Frames are actually moving (the `play` event fires before any have loaded).
+  const [rendering, setRendering] = useState(false)
   // Muted by the browser's autoplay policy rather than by the viewer.
   const autoMutedRef = useRef(false)
 
@@ -164,10 +166,10 @@ export default function VideoPlayer({
 
   return (
     <div ref={containerRef} className={cn('group/video relative overflow-hidden bg-foreground', fullscreen && 'bg-black', className)}>
-      {/* The poster sits behind the video rather than on it: a <video poster> stays
-          up until playback begins, so it would flash between opening/swiping and
-          play. This way the first decoded frame covers it as soon as it loads. */}
-      {poster && (
+      {/* The poster sits behind the video rather than on it (a <video poster> stays up
+          until playback begins). Autoplaying videos skip it entirely — a still photo
+          before the video reads as a stall — and show a spinner while loading instead. */}
+      {poster && !autoPlay && (
         <img src={img(poster, { width: 1080 })} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" />
       )}
       <video
@@ -180,6 +182,8 @@ export default function VideoPlayer({
         aria-label={title}
         onClick={toggle}
         onPlay={() => { setPlaying(true); setStarted(true); setShowPlayButton(false) }}
+        onPlaying={() => setRendering(true)}
+        onWaiting={() => setRendering(false)}
         onPause={() => setPlaying(false)}
         onEnded={() => { setPlaying(false); setShowPlayButton(true) }}
         onTimeUpdate={e => setTime(e.currentTarget.currentTime)}
@@ -187,6 +191,10 @@ export default function VideoPlayer({
         onDurationChange={e => setDuration(e.currentTarget.duration)}
         className={cn('absolute inset-0 h-full w-full cursor-pointer', fullscreen ? 'object-contain' : 'object-cover')}
       />
+
+      {autoPlay && active && !rendering && !showPlayButton && (
+        <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-10 w-10 -translate-x-1/2 -translate-y-1/2 animate-spin rounded-full border-2 border-background/30 border-t-background" aria-label="Loading video" />
+      )}
 
       {/* Big play button while paused */}
       {!playing && (!autoPlay || showPlayButton) && (
