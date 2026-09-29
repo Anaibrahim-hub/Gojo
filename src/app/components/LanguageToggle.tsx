@@ -11,7 +11,8 @@ const LANGUAGES: { code: LangCode; label: string; short: string }[] = [
   { code: 'en', label: 'English', short: 'EN' },
 ]
 
-export default function LanguageToggle() {
+/** `align="right"` opens the list leftward, for a toggle at the right edge of the screen. */
+export default function LanguageToggle({ align = 'left' }: { align?: 'left' | 'right' }) {
   const { language, setLanguage } = useLanguage()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -40,7 +41,7 @@ export default function LanguageToggle() {
         {current.short}
       </button>
       {open && (
-        <ul className="absolute left-0 top-12 z-50 w-56 overflow-hidden rounded-2xl border border-border bg-popover py-1 shadow-lg">
+        <ul className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-12 z-50 w-56 overflow-hidden rounded-2xl border border-border bg-popover py-1 shadow-lg`}>
           {LANGUAGES.map(l => (
             <li key={l.code}>
               <button

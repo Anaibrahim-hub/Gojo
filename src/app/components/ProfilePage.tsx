@@ -69,7 +69,7 @@ export default function ProfilePage() {
 
         <div className="mt-8 flex items-center justify-between rounded-2xl border border-border px-4 py-3">
           <span className="text-sm font-semibold">Language</span>
-          <LanguageToggle />
+          <LanguageToggle align="right" />
         </div>
         {/* Signed-out visitors get these from the footer; don't repeat them here */}
         {user && (
