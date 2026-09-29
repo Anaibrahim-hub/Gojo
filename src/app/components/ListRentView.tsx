@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context'
 import SignInModal from './SignInModal'
 import { formatETB } from '@/app/components/ui/utils'
 import { rentUnit } from '@/lib/listing-utils'
+import { compressVideo } from '@/lib/compress-video'
 
 const AMENITIES = [
   'Parking', 'Laundry', 'Pet Friendly', 'Generator',
@@ -209,6 +210,7 @@ export default function ListRentView() {
   // takes effect (and deletes the file) when the listing is saved.
   const [savedVideoKey, setSavedVideoKey] = useState<string | null>(null)
   const [videoProgress, setVideoProgress] = useState<number | null>(null)
+  const [videoPhase, setVideoPhase] = useState<'compressing' | 'uploading'>('uploading')
   const [videoError, setVideoError] = useState<string | null>(null)
   const [amenities, setAmenities] = useState<Record<string, boolean>>(
     Object.fromEntries(AMENITIES.map((a) => [a, false]))
@@ -481,8 +483,15 @@ export default function ListRentView() {
     setVideoError(null)
     setVideoProgress(0)
     try {
+      // Shrink it on the device first (falls back to the original if it can't).
+      setVideoPhase('compressing')
+      const compressed = await compressVideo(file, f => setVideoProgress(Math.round(f * 100)))
+      setVideoPhase('uploading')
+      setVideoProgress(0)
       const token = await user.getIdToken()
-      const uploaded = await uploadVideo(file, contentType, token, setVideoProgress)
+      const uploaded = compressed
+        ? await uploadVideo(compressed, 'video/mp4', token, setVideoProgress)
+        : await uploadVideo(file, contentType, token, setVideoProgress)
       discardUnsavedVideo()
       setVideo(uploaded)
     } catch (err) {
@@ -644,7 +653,7 @@ export default function ListRentView() {
 
               {videoProgress !== null ? (
                 <div className="flex flex-col items-center justify-center gap-2 w-full h-36 border border-gray-200 rounded-xl px-6">
-                  <span className="text-sm font-bold text-gray-700">Uploading video… {videoProgress}%</span>
+                  <span className="text-sm font-bold text-gray-700">{videoPhase === 'compressing' ? 'Compressing video…' : 'Uploading video…'} {videoProgress}%</span>
                   <div className="w-full max-w-xs bg-gray-200 rounded-full h-1.5">
                     <div className="bg-gray-900 h-1.5 rounded-full transition-all duration-200" style={{ width: `${videoProgress}%` }} />
                   </div>
@@ -797,7 +806,7 @@ export default function ListRentView() {
               {uploadingCount > 0
                 ? `Uploading ${uploadingCount} photo…`
                 : videoProgress !== null
-                ? 'Uploading video…'
+                ? (videoPhase === 'compressing' ? 'Compressing video…' : 'Uploading video…')
                 : submitting
                   ? 'Saving…'
                   : isEditing
