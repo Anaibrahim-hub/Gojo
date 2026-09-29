@@ -181,6 +181,11 @@ const EMPTY_FORM = {
 
 export default function ListRentView() {
   const router = useRouter()
+  // Opened directly (no page to go back to): fall back to My listings.
+  const goBack = () => {
+    if (window.history.length > 1) router.back()
+    else router.push('/my-listings')
+  }
   const { user, loading: authLoading } = useAuth()
   const [signInOpen, setSignInOpen] = useState(false)
 
@@ -812,8 +817,11 @@ export default function ListRentView() {
       <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} />
 
       {/* Mobile header */}
-      <div className="lg:hidden sticky top-0 z-50 bg-white px-2 pt-5 pb-3 flex items-center justify-between flex-shrink-0">
-        <span className="text-[28px] font-extrabold text-[#222222]">My Listings</span>
+      <div className="lg:hidden sticky top-0 z-50 bg-white px-2 pt-5 pb-3 flex items-center gap-2 flex-shrink-0">
+        <button onClick={goBack} aria-label="Back" className="p-1.5 hover:bg-gray-100 rounded-lg transition-all flex-shrink-0">
+          <ArrowLeft className="w-5 h-5 text-gray-700" />
+        </button>
+        <span className="text-[28px] font-extrabold text-[#222222] flex-1">My Listings</span>
         {canAddMore && (
           <button
             onClick={() => user ? setShowForm(true) : setSignInOpen(true)}
@@ -826,7 +834,7 @@ export default function ListRentView() {
 
       {/* Desktop header */}
       <div className="hidden lg:flex bg-white border-b border-gray-100 px-6 h-14 items-center gap-3 flex-shrink-0">
-        <button onClick={() => router.back()} className="p-1.5 hover:bg-gray-100 rounded-lg transition-all flex-shrink-0">
+        <button onClick={goBack} aria-label="Back" className="p-1.5 hover:bg-gray-100 rounded-lg transition-all flex-shrink-0">
           <ArrowLeft className="w-5 h-5 text-gray-700" />
         </button>
         <span className="text-base font-bold text-gray-900 flex-1">My Listings</span>
