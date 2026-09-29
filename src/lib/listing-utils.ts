@@ -80,6 +80,9 @@ export function shortType(p: Property): string {
 
 export function listingTitle(p: Property): string {
   if (isStay(p)) {
+    // Hotels and event venues list under the business's own account, so its name is the title.
+    const name = p.ownerDisplayName?.trim()
+    if (name) return name
     const type = shortType(p).toLowerCase()
     return type.charAt(0).toUpperCase() + type.slice(1)
   }
