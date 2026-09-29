@@ -132,6 +132,7 @@ function Sheet({ listing, mode, onClose }: { listing: Property; mode?: Mode | nu
                   poster={photos[0]}
                   title={`Video tour of ${title}`}
                   active={slide === 0 && !reportOpen}
+                  autoPlay
                   className="aspect-[4/3] w-full shrink-0 snap-center md:aspect-[16/9]"
                 />
               )}

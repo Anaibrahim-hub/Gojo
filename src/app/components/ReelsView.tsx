@@ -131,6 +131,8 @@ export default function ReelsView() {
               title={`Video tour of ${listingTitle(l)}`}
               active={active}
               autoPlay
+              loop
+              preload={Math.abs(i - activeIndex) <= 1}
               controlsPosition="screen-bottom"
               hideControlsOnMobile
               className="absolute inset-0"

@@ -24,6 +24,8 @@ export default function VideoPlayer({
   title,
   active = true,
   autoPlay = false,
+  loop = false,
+  preload = false,
   controlsPosition = 'bottom',
   hideControlsOnMobile = false,
   className,
@@ -40,6 +42,10 @@ export default function VideoPlayer({
    * (the tap that opened the feed counts); otherwise muted until the next tap.
    */
   autoPlay?: boolean
+  /** Repeat at the end (feed videos) instead of stopping (listing player). */
+  loop?: boolean
+  /** Buffer the video ahead of time (e.g. the next reel) so it starts without a flash. */
+  preload?: boolean
   /**
    * Where the control bar sits: 'bottom' (inside a gallery slide) or 'screen-bottom'
    * (a full-screen page: pinned to the bottom edge, clear of the phone's home bar).
@@ -158,19 +164,24 @@ export default function VideoPlayer({
 
   return (
     <div ref={containerRef} className={cn('group/video relative overflow-hidden bg-foreground', fullscreen && 'bg-black', className)}>
+      {/* The poster sits behind the video rather than on it: a <video poster> stays
+          up until playback begins, so it would flash between opening/swiping and
+          play. This way the first decoded frame covers it as soon as it loads. */}
+      {poster && (
+        <img src={img(poster, { width: 1080 })} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" />
+      )}
       <video
         ref={videoRef}
         src={src}
-        poster={poster ? img(poster, { width: 1080 }) : undefined}
         muted={muted}
-        loop={autoPlay /* feed videos repeat; the listing player stops at the end */}
+        loop={loop}
         playsInline
-        preload="metadata"
+        preload={active || preload ? 'auto' : 'metadata'}
         aria-label={title}
         onClick={toggle}
         onPlay={() => { setPlaying(true); setStarted(true); setShowPlayButton(false) }}
         onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setShowPlayButton(true) }}
         onTimeUpdate={e => setTime(e.currentTarget.currentTime)}
         onLoadedMetadata={e => setDuration(e.currentTarget.duration)}
         onDurationChange={e => setDuration(e.currentTarget.duration)}
