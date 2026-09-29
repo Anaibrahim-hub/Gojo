@@ -29,7 +29,9 @@ export default function SiteHeader({ showSearch = false }: { showSearch?: boolea
   return (
     <header
       className={cn(
-        'sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur',
+        // Solid, no backdrop-blur: the search dropdown renders inside the header, and
+        // some Safari versions crashed the page compositing a blurred layer with a scrolling child.
+        'sticky top-0 z-40 border-b border-border bg-background',
         !showSearch && 'hidden md:block',
       )}
     >
