@@ -61,7 +61,12 @@ function zoomForType(types: string[]): number {
 }
 
 function loadRecent(): RecentSearch[] {
-  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; }
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+    if (!Array.isArray(stored)) return [];
+    // Older builds of the header search wrote plain strings to this key
+    return stored.filter((s): s is RecentSearch => !!s && typeof s.text === 'string' && typeof s.lat === 'number' && typeof s.lng === 'number');
+  } catch { return []; }
 }
 
 function saveRecent(item: RecentSearch) {

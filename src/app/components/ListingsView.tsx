@@ -37,7 +37,14 @@ function zoomForType(types: string[]): number {
   if (types.includes('region')) return 8
   return 12
 }
-function loadRecent(): RecentSearch[] { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') } catch { return [] } }
+function loadRecent(): RecentSearch[] {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]')
+    if (!Array.isArray(stored)) return []
+    // Older builds of the header search wrote plain strings to this key
+    return stored.filter((s): s is RecentSearch => !!s && typeof s.text === 'string' && typeof s.lat === 'number' && typeof s.lng === 'number')
+  } catch { return [] }
+}
 function saveRecent(item: RecentSearch) {
   const deduped = loadRecent().filter(s => s.text !== item.text)
   localStorage.setItem(RECENT_KEY, JSON.stringify([item, ...deduped].slice(0, 5)))
