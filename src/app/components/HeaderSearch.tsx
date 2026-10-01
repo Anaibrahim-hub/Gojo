@@ -6,7 +6,7 @@ import { Clock, MapPin, Search, X } from 'lucide-react'
 import { cn } from './ui/utils'
 import { useListings } from '@/lib/listings-context'
 
-const RECENT_KEY = 'gojo_recent_searches'
+const RECENT_KEY = 'gojo_header_recent_searches'
 const MAX_RECENT = 4
 const MAX_SUGGESTIONS = 8
 
@@ -16,7 +16,11 @@ type Suggestion =
   | { kind: 'place'; value: string; count: number }
 
 function loadRecent(): string[] {
-  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]').slice(0, MAX_RECENT) } catch { return [] }
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]')
+    if (!Array.isArray(stored)) return []
+    return stored.filter((v): v is string => typeof v === 'string').slice(0, MAX_RECENT)
+  } catch { return [] }
 }
 
 function saveRecent(value: string) {
