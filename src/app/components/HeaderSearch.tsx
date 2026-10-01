@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Clock, MapPin, Search, X } from 'lucide-react'
 import { cn } from './ui/utils'
 import { useListings } from '@/lib/listings-context'
+import { goToListings } from '@/lib/listings-nav'
 
 const RECENT_KEY = 'gojo_header_recent_searches'
 const MAX_RECENT = 4
@@ -127,8 +128,7 @@ export default function HeaderSearch({
     next.delete('open')
     if (v) next.set('place', v)
     else next.delete('place')
-    const qs = next.toString()
-    router.push(`/listings${qs ? `?${qs}` : ''}`)
+    goToListings(router, next.toString())
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

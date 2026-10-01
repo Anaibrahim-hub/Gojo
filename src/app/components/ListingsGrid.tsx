@@ -9,6 +9,7 @@ import ListingCard, { ListingCardSkeleton } from './ListingCard'
 import { useListings } from '@/lib/listings-context'
 import { useListingModal } from '@/lib/listing-modal-context'
 import { useListing } from '@/lib/use-listing'
+import { goToListings } from '@/lib/listings-nav'
 import { CATEGORIES, listingKey, listingPrice, matchesCategory, matchesMode, searchText, type Mode } from '@/lib/listing-utils'
 
 const num = (v: string | null) => {
@@ -41,8 +42,7 @@ export default function ListingsGrid() {
       onClose: () => {
         const next = new URLSearchParams(window.location.search)
         next.delete('open')
-        const qs = next.toString()
-        router.replace(`/listings${qs ? `?${qs}` : ''}`, { scroll: false })
+        goToListings(router, next.toString(), { replace: true })
       },
     })
     // Open once per linked listing.

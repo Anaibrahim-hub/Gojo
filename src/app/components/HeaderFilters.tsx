@@ -8,6 +8,7 @@ import { setSearchOpen } from '@/lib/search-open-store'
 import { useCurrency } from '@/lib/currency'
 import { useListings } from '@/lib/listings-context'
 import { listingPrice, matchesMode, type Mode } from '@/lib/listing-utils'
+import { goToListings } from '@/lib/listings-nav'
 import { cn } from './ui/utils'
 
 const COUNTS = [0, 1, 2, 3, 4] as const
@@ -85,8 +86,7 @@ export default function HeaderFilters() {
     if (baths) next.set('baths', String(baths))
     if (minPrice != null) next.set('minPrice', String(minPrice))
     if (maxPrice != null) next.set('maxPrice', String(maxPrice))
-    const qs = next.toString()
-    router.push(`/listings${qs ? `?${qs}` : ''}`)
+    goToListings(router, next.toString())
   }
 
   const clear = () => {

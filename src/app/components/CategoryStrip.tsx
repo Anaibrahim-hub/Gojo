@@ -3,6 +3,7 @@
 import { Briefcase, BedSingle, Building, Building2, Crown, Home, Hotel, LayoutGrid, PartyPopper } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CATEGORIES } from '@/lib/listing-utils'
+import { goToListings } from '@/lib/listings-nav'
 
 const ICONS = { Briefcase, BedSingle, Building, Building2, Crown, Home, Hotel, LayoutGrid, PartyPopper }
 
@@ -17,10 +18,7 @@ export default function CategoryStrip() {
     next.delete('open')
     if (id === 'all') next.delete('type')
     else next.set('type', id)
-    const qs = next.toString()
-    const href = `/listings${qs ? `?${qs}` : ''}`
-    if (pathname === '/listings') router.replace(href, { scroll: false })
-    else router.push(href)
+    goToListings(router, next.toString(), { replace: pathname === '/listings' })
   }
 
   return (
